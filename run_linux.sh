@@ -53,7 +53,7 @@ if [ ! -z "$MISSING" ]; then
 fi
 
 # Configuration
-PORT=8000
+PORT=8182
 
 # Launch
 echo "[INFO] Starting Server on port $PORT..."

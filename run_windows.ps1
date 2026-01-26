@@ -2,7 +2,7 @@
 $ErrorActionPreference = "Stop"
 
 # --- CONFIGURATION ---
-$port = 8000
+$port = 8182
 # ---------------------
 
 Write-Host "==================================================" -ForegroundColor Green
