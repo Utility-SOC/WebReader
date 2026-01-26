@@ -12,7 +12,6 @@
     *   `run_linux.sh` (Launcher for Linux/Mac)
     *   `README.md` (This guide)
     *   `layouts/` folder (Optional: preserve your saved PDF layouts)
-    *   *Note: Do NOT copy the `venv` or `__pycache__` folders. The script will recreate `venv`.*
 3.  **Run**: Double-click `run_windows.bat`.
     *   The script will automatically set up the environment and install dependencies.
     *   It will open your web browser to the application.
