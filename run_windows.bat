@@ -35,7 +35,7 @@ call venv\Scripts\activate
 echo [INFO] Checking dependencies...
 pip install -r requirements.txt >nul 2>&1
 IF %ERRORLEVEL% NEQ 0 (
-    echo [INFO] Installing dependencies - first run, this may take a moment...
+    echo [INFO] Installing dependencies - first run, this may take a moment
     pip install -r requirements.txt
 )
 
