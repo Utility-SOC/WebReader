@@ -44,7 +44,7 @@ where tesseract >nul 2>&1
 IF %ERRORLEVEL% NEQ 0 (
     echo.
     echo [WARNING] Tesseract OCR is not found.
-    echo Attempting to install via Windows Package Manager (winget)...
+    echo Attempting to install via Windows Package Manager - winget
     
     winget install -e --id UB-Mannheim.TesseractOCR
     IF %ERRORLEVEL% EQ 0 (
