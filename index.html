@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scientific Speed Reader</title>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Lucid Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- FONTS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=EB+Garamond:wght@400;700&family=Lexend:wght@300;400;700&family=Merriweather:wght@400;700&family=Noto+Sans:wght@400;700&family=Open+Sans:wght@400;700&family=Roboto:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <!-- OpenDyslexic via CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/opendyslexic@latest/open-dyslexic.css" rel="stylesheet">
+
+    <style>
+        /* Custom Styles for The Pivot */
+        .pivot-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 150px;
+            /* Allow expansion */
+            position: relative;
+            overflow: hidden;
+            user-select: none;
+            transition: all 0.3s ease;
+        }
+
+        .pivot-left {
+            flex: 1;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .pivot-center {
+            width: auto;
+            text-align: center;
+            font-weight: bold;
+            padding: 0 2px;
+        }
+
+        .pivot-right {
+            flex: 1;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        .guide-line {
+            position: absolute;
+            left: 50%;
+            width: 2px;
+            background-color: rgba(0, 0, 0, 0.1);
+            transform: translateX(-50%);
+            z-index: 0;
+        }
+
+        .guide-line.dark {
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .guide-top {
+            top: 0;
+            height: 35%;
+        }
+
+        .guide-bottom {
+            bottom: 0;
+            height: 35%;
+        }
+
+        input[type=range] {
+            accent-color: #3b82f6;
+        }
+
+        /* EDITOR Styles */
+        .pdf-editor-canvas {
+            cursor: crosshair;
+            position: relative;
+            overflow: auto;
+            border: 1px solid #ccc;
+            max-height: 70vh;
+            background: #eee;
+        }
+
+        .draw-box {
+            position: absolute;
+            background: rgba(0, 0, 255, 0.2);
+            border: 2px solid blue;
+        }
+
+        .draw-box.image-type {
+            background: rgba(255, 165, 0, 0.3);
+            border: 2px solid orange;
+        }
+
+        .box-label {
+            position: absolute;
+            top: -20px;
+            left: 0;
+            background: blue;
+            color: white;
+            font-size: 10px;
+            padding: 1px 4px;
+        }
+
+        .draw-box.image-type .box-label {
+            background: orange;
+        }
+
+        /* Scrollbar for Context */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 text-gray-800 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // ---------------------------------------------------------
+        // 1. Scientific & Accessibility Presets 
+        // ---------------------------------------------------------
+        const FONTS = [
+            { name: "Courier New", label: "Monospace (Default)", family: "'Courier New', monospace" },
+            { name: "Atkinson Hyperlegible", label: "Atkinson Hyperlegible (Low Vision)", family: "'Atkinson Hyperlegible', sans-serif" },
+            { name: "OpenDyslexic", label: "OpenDyslexic (Dyslexia)", family: "'OpenDyslexic', sans-serif" },
+            { name: "Lexend", label: "Lexend (Reading Speed)", family: "'Lexend', sans-serif" },
+            { name: "Merriweather", label: "Merriweather (Serif)", family: "'Merriweather', serif" },
+            { name: "Noto Sans", label: "Noto Sans (Clear)", family: "'Noto Sans', sans-serif" },
+            { name: "Arial", label: "Arial (Standard)", family: "Arial, sans-serif" }
+        ];
+
+        const PRESETS = {
+            standard: {
+                id: "standard",
+                label: "Standard RSVP",
+                citation: "Forster, K. I. (1970). Visual perception of rapidly presented word sequences.",
+                config: { chunkSize: 1, orpCentering: false, guideLines: false, bionicBolding: false, wpm: 300, orpOffset: 0.5, skipInterval: 50 }
+            },
+            orp_focused: {
+                id: "orp_focused",
+                label: "ORP Alignment",
+                citation: "Rayner, K. (1998). Eye movements in reading and information processing.",
+                config: { chunkSize: 1, orpCentering: true, guideLines: true, bionicBolding: false, wpm: 350, orpOffset: 0.35, skipInterval: 50 }
+            },
+            cognitive: {
+                id: "cognitive",
+                label: "Cognitive Chunking",
+                citation: "Miller, G. A. (1956). The magical number seven, plus or minus two.",
+                config: { chunkSize: 3, orpCentering: false, guideLines: true, bionicBolding: true, wpm: 250, orpOffset: 0.5, skipInterval: 50 }
+            },
+            typographic: {
+                id: "typographic",
+                label: "Typographic Guidance",
+                citation: "Schotter, E. R., et al. (2012). Parafoveal processing in reading.",
+                config: { chunkSize: 1, orpCentering: true, guideLines: false, bionicBolding: true, wpm: 300, orpOffset: 0.4, skipInterval: 50 }
+            }
+        };
+
+        // ---------------------------------------------------------
+        // 2. Logic
+        // ---------------------------------------------------------
+        const processChunk = (chunk, settings) => {
+            const text = chunk.join(" ");
+            if (!settings.orpCentering) return { left: "", center: text, right: "", isPivot: false };
+            const pivotIndex = Math.floor(text.length * settings.orpOffset);
+            return {
+                left: text.slice(0, pivotIndex),
+                center: text[pivotIndex],
+                right: text.slice(pivotIndex + 1),
+                isPivot: true
+            };
+        };
+
+        const applyBionic = (text) => {
+            if (!text) return text;
+            const split = Math.ceil(text.length / 2);
+            return <span><b className="font-extrabold">{text.slice(0, split)}</b><span className="opacity-80">{text.slice(split)}</span></span>;
+        };
+
+        // ---------------------------------------------------------
+        // 3. Components
+        // ---------------------------------------------------------
+
+        // --- MANUAL EDITOR COMPONENT ---
+        const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish }) => {
+            const [pageIdx, setPageIdx] = useState(0);
+            const [tool, setTool] = useState('text'); // 'text' | 'image'
+            const [imageUrl, setImageUrl] = useState(null);
+
+            const [boxesMap, setBoxesMap] = useState(initialBoxes || {});
+            const [selectedBoxIdx, setSelectedBoxIdx] = useState(null);
+
+            // New State
+            const [startPage, setStartPage] = useState(1);
+            const [fitWidth, setFitWidth] = useState(true); // Default to fit for mobile
+
+            // Interaction State
+            const [interaction, setInteraction] = useState({
+                mode: 'idle', // 'idle', 'drawing', 'moving', 'resizing'
+                startPoint: { x: 0, y: 0 }, // Mouse down point
+                initialBox: null, // Box state at start of interaction
+                handle: null // 'nw', 'ne', 'sw', 'se' etc for resizing
+            });
+
+            // Drawing State (Draft box)
+            const [draftBox, setDraftBox] = useState(null);
+
+            const imgRef = useRef(null);
+
+            // Load Image
+            useEffect(() => {
+                const loadPage = async () => {
+                    const url = `/pdf/${filename}/page/${pageIdx + 1}`;
+                    setImageUrl(url);
+                    setSelectedBoxIdx(null);
+                };
+                loadPage();
+            }, [filename, pageIdx]);
+
+            // Keyboard Listeners (Delete + Nudge)
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (selectedBoxIdx === null) return;
+
+                    // Delete
+                    if (e.key === 'Delete' || e.key === 'Backspace') {
+                        deleteSelectedBox();
+                        return;
+                    }
+
+                    // Nudge / Resize
+                    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                        e.preventDefault();
+                        const step = 1; // Precision 1px
+                        const dx = (e.key === 'ArrowRight' ? step : (e.key === 'ArrowLeft' ? -step : 0));
+                        const dy = (e.key === 'ArrowDown' ? step : (e.key === 'ArrowUp' ? -step : 0));
+
+                        setBoxesMap(prev => {
+                            const pageKey = String(pageIdx);
+                            const list = [...(prev[pageKey] || [])];
+                            if (!list[selectedBoxIdx]) return prev;
+
+                            const box = { ...list[selectedBoxIdx] };
+
+                            if (e.shiftKey) {
+                                // RESIZE (Expand/Contract dimensions)
+                                box.w = Math.max(5, box.w + dx);
+                                box.h = Math.max(5, box.h + dy);
+                            } else {
+                                // MOVE
+                                box.x += dx;
+                                box.y += dy;
+                            }
+                            list[selectedBoxIdx] = box;
+                            return { ...prev, [pageKey]: list };
+                        });
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [selectedBoxIdx, pageIdx, boxesMap]);
+
+            // ---------------------------
+            // MOUSE HANDLERS
+            // ---------------------------
+            const getLoc = (e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                // If fitWidth is ON, the image and overlay are scaled by CSS (width: 100%).
+                // We need to map the click coordinates back to the original image size (100 DPI) for consistent storage.
+                // However, the cleanest way is to assume the Rendered Size is the coordinate space, 
+                // but then we must store Scale Factor or Normalize.
+                // EXISTING SYSTEM stores pixels at 100 DPI.
+                // So we MUST Un-Scale the input.
+
+                let scale = 1;
+                if (fitWidth && imgRef.current) {
+                    scale = imgRef.current.naturalWidth / rect.width;
+                }
+
+                return {
+                    x: (e.clientX - rect.left) * scale,
+                    y: (e.clientY - rect.top) * scale
+                };
+            };
+
+            const handleMouseDown = (e) => {
+                // Prevent scrolling on touch
+                // e.preventDefault(); // Might block scrolling on background?
+                const { x, y } = getLoc(e);
+
+                // 1. Check for Resize Handle Hit (if selection active)
+                if (selectedBoxIdx !== null) {
+                    const handle = getHandleAt(x, y, boxesMap[String(pageIdx)][selectedBoxIdx]);
+                    if (handle) {
+                        setInteraction({
+                            mode: 'resizing',
+                            startPoint: { x, y },
+                            initialBox: { ...boxesMap[String(pageIdx)][selectedBoxIdx] },
+                            handle
+                        });
+                        e.stopPropagation();
+                        return;
+                    }
+                }
+
+                // 2. Check for Box Hit (Move or Select)
+                const hitIdx = getBoxAt(x, y);
+                if (hitIdx !== null) {
+                    setSelectedBoxIdx(hitIdx);
+                    setInteraction({
+                        mode: 'moving',
+                        startPoint: { x, y },
+                        initialBox: { ...boxesMap[String(pageIdx)][hitIdx] },
+                        handle: null
+                    });
+                    e.stopPropagation();
+                    return;
+                }
+
+                // 3. Background -> Start Drawing
+                setSelectedBoxIdx(null);
+                setInteraction({ mode: 'drawing', startPoint: { x, y }, initialBox: null, handle: null });
+                setDraftBox({ x, y, w: 0, h: 0, type: tool });
+            };
+
+            const handleMouseMove = (e) => {
+                const { x, y } = getLoc(e);
+
+                if (interaction.mode === 'drawing') {
+                    const start = interaction.startPoint;
+                    setDraftBox({
+                        x: Math.min(start.x, x),
+                        y: Math.min(start.y, y),
+                        w: Math.abs(x - start.x),
+                        h: Math.abs(y - start.y),
+                        type: tool
+                    });
+                } else if (interaction.mode === 'moving') {
+                    const dx = x - interaction.startPoint.x;
+                    const dy = y - interaction.startPoint.y;
+
+                    updateBox(selectedBoxIdx, {
+                        x: interaction.initialBox.x + dx,
+                        y: interaction.initialBox.y + dy
+                    });
+                } else if (interaction.mode === 'resizing') {
+                    const dx = x - interaction.startPoint.x;
+                    const dy = y - interaction.startPoint.y;
+                    const init = interaction.initialBox;
+                    let newBox = { ...init };
+
+                    // Handle Logic
+                    if (interaction.handle.includes('e')) newBox.w = Math.max(5, init.w + dx);
+                    if (interaction.handle.includes('s')) newBox.h = Math.max(5, init.h + dy);
+                    if (interaction.handle.includes('w')) {
+                        newBox.x = init.x + dx;
+                        newBox.w = Math.max(5, init.w - dx);
+                    }
+                    if (interaction.handle.includes('n')) {
+                        newBox.y = init.y + dy;
+                        newBox.h = Math.max(5, init.h - dy);
+                    }
+
+                    updateBox(selectedBoxIdx, newBox);
+                }
+            };
+
+            const handleMouseUp = () => {
+                if (interaction.mode === 'drawing' && draftBox) {
+                    if (draftBox.w > 5 && draftBox.h > 5) {
+                        addBox(draftBox);
+                        setSelectedBoxIdx((boxesMap[String(pageIdx)] || []).length);
+                    }
+                    setDraftBox(null);
+                }
+                setInteraction({ mode: 'idle', startPoint: { x: 0, y: 0 }, initialBox: null, handle: null });
+            };
+
+            // Helpers
+            const getBoxAt = (x, y) => {
+                const boxes = boxesMap[String(pageIdx)] || [];
+                // Check in reverse order (top first)
+                for (let i = boxes.length - 1; i >= 0; i--) {
+                    const b = boxes[i];
+                    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return i;
+                }
+                return null;
+            };
+
+            const getHandleAt = (mx, my, box) => {
+                const HANDLE_SIZE = 20; // Larger for touch
+                const hit = (hx, hy) => Math.abs(mx - hx) <= HANDLE_SIZE && Math.abs(my - hy) <= HANDLE_SIZE;
+
+                if (hit(box.x, box.y)) return 'nw';
+                if (hit(box.x + box.w, box.y)) return 'ne';
+                if (hit(box.x, box.y + box.h)) return 'sw';
+                if (hit(box.x + box.w, box.y + box.h)) return 'se';
+                return null;
+            };
+
+            const addBox = (box) => {
+                setBoxesMap(prev => {
+                    const k = String(pageIdx);
+                    return { ...prev, [k]: [...(prev[k] || []), box] };
+                });
+            };
+
+            const updateBox = (idx, newAttrs) => {
+                setBoxesMap(prev => {
+                    const k = String(pageIdx);
+                    const list = [...(prev[k] || [])];
+                    list[idx] = { ...list[idx], ...newAttrs };
+                    return { ...prev, [k]: list };
+                });
+            };
+
+            const deleteSelectedBox = () => {
+                if (selectedBoxIdx === null) return;
+                setBoxesMap(prev => {
+                    const k = String(pageIdx);
+                    const list = prev[k].filter((_, i) => i !== selectedBoxIdx);
+                    return { ...prev, [k]: list };
+                });
+                setSelectedBoxIdx(null);
+            };
+
+            const clearPage = () => {
+                if (window.confirm("Clear all boxes on this page?")) {
+                    setBoxesMap(prev => ({ ...prev, [String(pageIdx)]: [] }));
+                    setSelectedBoxIdx(null);
+                }
+            };
+
+            const setAsStart = () => {
+                setStartPage(pageIdx + 1);
+                alert(`Starting Reading from Page ${pageIdx + 1}`);
+            };
+
+            const prevPage = () => setPageIdx(Math.max(0, pageIdx - 1));
+            const nextPage = () => {
+                if (pageIdx >= pageCount - 1) return;
+                const nextIdx = pageIdx + 1;
+                // Auto Copy
+                const currentBoxes = boxesMap[String(pageIdx)] || [];
+                const nextBoxes = boxesMap[String(nextIdx)];
+                if (currentBoxes.length > 0 && (!nextBoxes || nextBoxes.length === 0)) {
+                    setBoxesMap(prev => ({ ...prev, [String(nextIdx)]: [...currentBoxes] }));
+                }
+                setPageIdx(nextIdx);
+            };
+
+            return (
+                <div className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex flex-col text-white select-none">
+                    {/* Toolbar */}
+                    <div className="p-3 bg-gray-800 flex flex-wrap gap-2 justify-between items-center shadow-md border-b border-gray-700">
+                        <div className="flex items-center gap-2">
+                            <h2 className="font-bold text-lg text-blue-400 hidden sm:block">Editor</h2>
+                            <div className="flex bg-gray-700 rounded p-0.5">
+                                <button onClick={prevPage} disabled={pageIdx === 0} className="px-3 py-1 hover:bg-gray-600 rounded-l disabled:opacity-50 border-r border-gray-600">Prev</button>
+                                <span className="px-3 py-1 font-mono text-sm flex items-center bg-gray-600">Page {pageIdx + 1} / {pageCount}</span>
+                                <button onClick={nextPage} disabled={pageIdx === pageCount - 1} className="px-3 py-1 hover:bg-gray-600 rounded-r disabled:opacity-50">Next</button>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-2 items-center overflow-x-auto">
+                            <button onClick={() => setTool('text')} className={`p-2 rounded ${tool === 'text' ? 'bg-blue-600 ring-1 ring-white' : 'bg-gray-700'}`}>📝</button>
+                            <button onClick={() => setTool('image')} className={`p-2 rounded ${tool === 'image' ? 'bg-orange-600 ring-1 ring-white' : 'bg-gray-700'}`}>🖼️</button>
+                            <button onClick={() => setFitWidth(!fitWidth)} className={`p-2 rounded bg-gray-700 text-xs font-bold w-12`}>{fitWidth ? 'FIT' : '1:1'}</button>
+
+                            {selectedBoxIdx !== null ? (
+                                <button onClick={deleteSelectedBox} className="p-2 bg-red-600 rounded">🗑️</button>
+                            ) : (
+                                <button onClick={setAsStart} className="px-2 py-1 bg-purple-600 rounded text-xs font-bold whitespace-nowrap" title="Start from this page">Start Here (pg{startPage})</button>
+                            )}
+                        </div>
+
+                        <div className="flex gap-2">
+                            <button onClick={onCancel} className="px-3 py-1 text-gray-400 hover:text-white text-sm">Cancel</button>
+                            <button onClick={() => {
+                                // Normalize Scale to Relative (0.0 - 1.0)
+                                const nw = imgRef.current ? imgRef.current.naturalWidth : 800;
+                                const nh = imgRef.current ? imgRef.current.naturalHeight : 1100;
+                                const normMap = {};
+                                Object.keys(boxesMap).forEach(k => {
+                                    normMap[k] = boxesMap[k].map(b => {
+                                        // If already relative, keep as is
+                                        if (b.relative) return b;
+                                        // If absolute (pixels), normalize
+                                        return {
+                                            ...b,
+                                            relative: true,
+                                            x: b.x / nw,
+                                            y: b.y / nh,
+                                            w: b.w / nw,
+                                            h: b.h / nh
+                                        };
+                                    });
+                                });
+                                onFinish(normMap, startPage);
+                            }} className="px-3 py-1 bg-green-600 hover:bg-green-500 rounded font-bold shadow-lg">DONE</button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-auto bg-gray-500 flex justify-center p-2 sm:p-4 cursor-default">
+                        <div className="relative shadow-2xl bg-white select-none box-default outline-none"
+                            style={{
+                                alignSelf: 'flex-start',
+                                // If fitWidth, use 100% width, otherwise auto
+                                width: fitWidth ? '100%' : 'auto',
+                                maxWidth: fitWidth ? '100%' : 'unset'
+                            }}
+                        >
+                            {imageUrl && (
+                                <img
+                                    ref={imgRef}
+                                    src={imageUrl}
+                                    draggable="false"
+                                    className="block"
+                                    onLoad={(e) => {
+                                        // Check if current page boxes are relative, if so, convert to pixels for editing
+                                        const nw = e.target.naturalWidth;
+                                        const nh = e.target.naturalHeight;
+                                        const currentBoxes = boxesMap[String(pageIdx)];
+
+                                        if (currentBoxes && currentBoxes.some(b => b.relative)) {
+                                            setBoxesMap(prev => {
+                                                const list = prev[String(pageIdx)].map(b => {
+                                                    if (!b.relative) return b;
+                                                    return {
+                                                        ...b,
+                                                        relative: false, // Convert to absolute pixels for internal state
+                                                        x: b.x * nw,
+                                                        y: b.y * nh,
+                                                        w: b.w * nw,
+                                                        h: b.h * nh
+                                                    };
+                                                });
+                                                return { ...prev, [String(pageIdx)]: list };
+                                            });
+                                        }
+                                    }}
+                                    style={{
+                                        width: fitWidth ? '100%' : 'auto',
+                                        maxWidth: 'unset',
+                                        pointerEvents: 'none',
+                                        userSelect: 'none'
+                                    }}
+                                />
+                            )}
+                            {/* Overlay */}
+                            <div className="absolute inset-0 z-10"
+                                onMouseDown={handleMouseDown}
+                                onMouseMove={handleMouseMove}
+                                onMouseUp={handleMouseUp}
+                                onMouseLeave={handleMouseUp}
+                                onClick={(e) => e.stopPropagation()} // Prevent click through?
+                            >
+                                {(boxesMap[String(pageIdx)] || []).map((box, i) => {
+                                    const isSelected = selectedBoxIdx === i;
+                                    // box coords are natural 100dpi
+                                    // if fitWidth, we need to scale them for display
+                                    // Use CSS Transform on individual boxes? Or assume getLoc handles Input, so we need matching Output.
+                                    // Wait, getLoc UN-SCALES the input. So State is 100DPI.
+                                    // So we must SCALE the output.
+
+                                    // We need the current scale factor.
+                                    // Render workaround: use percentage? No.
+                                    // We can use a Wrapper Div for the boxes that has `transform: scale(X)`.
+                                    // But we need to know X.
+                                    // React ref trick:
+                                    // Use callback ref to measure?
+
+                                    // SIMPLER: use `left: (box.x / naturalWidth) * 100 + "%"`?
+                                    // We need naturalWidth. We can get it from imgRef.current?.naturalWidth.
+                                    // But that might not be available on first render.
+
+                                    // Fallback: 
+                                    // Use inline style function that tries to read imgRef.
+
+                                    const naturalW = imgRef.current?.naturalWidth || 800;
+                                    const scale = fitWidth && imgRef.current ? (imgRef.current.clientWidth / naturalW) : 1;
+
+                                    // Actually, if we use percentages, we don't need to re-render on resize!
+                                    // x% = (box.x / naturalW) * 100
+                                    // But we need naturalW properly.
+                                    // Let's rely on standard pixels if not fitted, and percentage if fitted?
+                                    // That requires naturalWidth.
+
+                                    // Let's just use the `scale` variable which we can force-update?
+                                    // Or just use style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }} on a container?
+                                    // Yes.
+
+                                    return (
+                                        <div key={i}
+                                            className={`absolute border-2 flex items-center justify-center group ${box.type === 'image' ? 'border-orange-500 bg-orange-500/20' : 'border-blue-600 bg-blue-600/10'}`}
+                                            style={{
+                                                left: box.x * scale,
+                                                top: box.y * scale,
+                                                width: box.w * scale,
+                                                height: box.h * scale,
+                                                borderColor: isSelected ? (box.type == 'image' ? 'orange' : 'blue') : undefined,
+                                                zIndex: isSelected ? 20 : 10,
+                                                cursor: 'move'
+                                            }}>
+                                            <div className={`absolute -top-5 left-0 text-xs px-1.5 py-0.5 font-bold rounded text-white ${box.type === 'image' ? 'bg-orange-500' : 'bg-blue-600'} ${isSelected ? 'ring-1 ring-white' : ''}`}>{i + 1}</div>
+                                            {isSelected && (<><div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-500 cursor-nw-resize hover:bg-blue-200"></div><div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-500 cursor-ne-resize hover:bg-blue-200"></div><div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-500 cursor-sw-resize hover:bg-blue-200"></div><div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-500 cursor-se-resize hover:bg-blue-200"></div></>)}
+                                        </div>
+                                    );
+                                })}
+                                {draftBox && (
+                                    <div className={`absolute border-2 border-dashed ${draftBox.type === 'image' ? 'border-orange-500 bg-orange-500/10' : 'border-blue-500 bg-blue-500/10'}`}
+                                        style={{
+                                            left: draftBox.x * (fitWidth && imgRef.current ? (imgRef.current.clientWidth / imgRef.current.naturalWidth) : 1),
+                                            top: draftBox.y * (fitWidth && imgRef.current ? (imgRef.current.clientWidth / imgRef.current.naturalWidth) : 1),
+                                            width: draftBox.w * (fitWidth && imgRef.current ? (imgRef.current.clientWidth / imgRef.current.naturalWidth) : 1),
+                                            height: draftBox.h * (fitWidth && imgRef.current ? (imgRef.current.clientWidth / imgRef.current.naturalWidth) : 1),
+                                            pointerEvents: 'none'
+                                        }}
+                                    />
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+
+        // --- MAIN APP ---
+        const RSVPDisplay = ({ words, index, settings, appearance, isDark, images }) => {
+            if (!words || words.length === 0) return <div className="text-center p-10 opacity-50">Upload a file to begin</div>;
+
+            const currentItem = words[index];
+            const isFigure = currentItem && currentItem.startsWith("[FIGURE:");
+
+            if (isFigure) {
+                const name = currentItem.replace("[FIGURE:", "").replace("]", "").trim();
+                const imgData = images.find(img => img.name === name);
+
+                return (
+                    <div className="flex flex-col items-center justify-center p-4">
+                        {imgData ? (
+                            <img src={imgData.src} className="max-h-[500px] border shadow-lg rounded object-contain" alt={name} />
+                        ) : (
+                            <div className="p-10 border border-dashed rounded bg-gray-100">Image {name}</div>
+                        )}
+                        <div className="mt-2 text-sm text-gray-500 font-mono">{name}</div>
+                    </div>
+                );
+            }
+
+            const currentWords = words.slice(index, index + settings.chunkSize);
+            const processed = processChunk(currentWords, settings);
+
+            return (
+                <div
+                    className={`relative w-full border-y-2 ${isDark ? 'border-gray-700 bg-gray-900 text-gray-100' : 'border-gray-200 bg-white text-gray-900'} transition-colors duration-300`}
+                    style={{
+                        fontFamily: appearance.fontFamily,
+                        fontSize: `${appearance.fontSize}px`
+                        // NOTE: Height can expand if needed, but flex center keeps it pivotal
+                    }}
+                >
+                    {settings.guideLines && (
+                        <>
+                            <div className={`guide-line guide-top ${isDark ? 'dark' : ''}`}></div>
+                            <div className={`guide-line guide-bottom ${isDark ? 'dark' : ''}`}></div>
+                        </>
+                    )}
+                    <div className="pivot-container" style={{ minHeight: appearance.fontSize * 2 + 'px' }}>
+                        <div className="pivot-left">{settings.bionicBolding ? applyBionic(processed.left) : processed.left}</div>
+                        <div className={`pivot-center ${processed.isPivot ? 'text-red-500' : ''}`}>{processed.center}</div>
+                        <div className="pivot-right">{settings.bionicBolding ? applyBionic(processed.right) : processed.right}</div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ContextView = ({ words, index, isDark, appearance }) => {
+            if (!words || words.length === 0) return null;
+
+            const start = Math.max(0, index - 20);
+            const end = Math.min(words.length, index + 30);
+            const before = words.slice(start, index).join(" ");
+            const current = words[index];
+            const after = words.slice(index + 1, end).join(" ");
+
+            return (
+                <div className={`p-4 rounded-lg mt-4 text-center leading-relaxed h-32 overflow-y-auto custom-scrollbar ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}
+                    style={{ fontFamily: appearance.fontFamily, fontSize: '18px' }}
+                >
+                    <span className="opacity-60">{before}</span>
+                    <span className={`mx-1 font-bold ${isDark ? 'text-white bg-blue-900/50 px-1 rounded' : 'text-black bg-yellow-200 px-1 rounded'}`}>
+                        {current}
+                    </span>
+                    <span className="opacity-60">{after}...</span>
+                </div>
+            );
+        };
+
+        const ImageGallery = ({ images, isDark }) => {
+            if (!images || images.length === 0) return null;
+            const [isOpen, setIsOpen] = useState(false);
+            if (!isOpen) return (
+                <button onClick={() => setIsOpen(true)} className="fixed bottom-4 right-4 bg-orange-600 hover:bg-orange-500 text-white p-3 rounded-full shadow-lg z-50 flex items-center gap-2">
+                    <span>🖼️</span> <span className="font-bold">{images.length} Images</span>
+                </button>
+            );
+            return (
+                <div className="fixed inset-y-0 right-0 w-80 bg-gray-900 shadow-2xl z-50 border-l border-gray-700 flex flex-col transform transition-transform">
+                    <div className="p-4 bg-gray-800 border-b border-gray-700 flex justify-between items-center text-white">
+                        <h3 className="font-bold">Extracted Images</h3>
+                        <button onClick={() => setIsOpen(false)} className="hover:text-red-400">✕</button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        {images.map((img, i) => (
+                            <div key={i} className="bg-gray-800 rounded p-2 border border-gray-700">
+                                <img src={img.src} alt={img.name} className="w-full h-auto rounded" />
+                                <div className="text-xs text-gray-400 mt-2 truncate">{img.name}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- CHAPTER SELECTOR COMPONENT ---
+        const ChapterSelector = ({ chapters, onSelect, onCancel }) => {
+            return (
+                <div className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] flex flex-col">
+                        <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
+                            <h2 className="font-bold text-lg">Select Start Chapter</h2>
+                            <button onClick={onCancel} className="text-gray-500 hover:text-red-500">✕</button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-2">
+                            {chapters.map((chap, i) => (
+                                <button key={i} onClick={() => onSelect(chap.start_index)}
+                                    className="w-full text-left p-3 hover:bg-blue-50 border-b border-gray-100 last:border-0 flex justify-between items-center group transition-colors">
+                                    <span className="font-semibold text-gray-700 group-hover:text-blue-700">{chap.title}</span>
+                                    <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded group-hover:bg-blue-100">{chap.word_count}w</span>
+                                </button>
+                            ))}
+                        </div>
+                        <div className="p-3 border-t bg-gray-50 text-right rounded-b-lg">
+                            <button onClick={() => onSelect(0)} className="text-sm text-gray-500 hover:underline">Start from Beginning</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- AUDIO MODAL COMPONENT ---
+        const AudioModal = ({ filename, pageCount, manualBoxes, onCancel }) => {
+            const [voices, setVoices] = useState([]);
+            const [loadingVoices, setLoadingVoices] = useState(true);
+            const [selectedVoice, setSelectedVoice] = useState("");
+            const [startPage, setStartPage] = useState(1);
+            const [endPage, setEndPage] = useState(pageCount || 1);
+            const [isDownloading, setIsDownloading] = useState(false);
+
+            useEffect(() => {
+                const fetchVoices = async () => {
+                    try {
+                        const res = await fetch("/tts/voices");
+                        const data = await res.json();
+                        if (data.voices && data.voices.length > 0) {
+                            setVoices(data.voices);
+                            setSelectedVoice(data.voices[0].id);
+                        }
+                    } catch (err) {
+                        console.error("Failed to load voices", err);
+                    } finally {
+                        setLoadingVoices(false);
+                    }
+                };
+                fetchVoices();
+            }, []);
+
+            const handleDownload = async () => {
+                if (!filename) return;
+                setIsDownloading(true);
+                try {
+                    const res = await fetch("/tts/download", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            filename: filename,
+                            start_page: Number(startPage),
+                            end_page: Number(endPage),
+                            voice_id: selectedVoice || undefined,
+                            manual_boxes: manualBoxes || undefined
+                        })
+                    });
+
+                    if (!res.ok) throw new Error(await res.text());
+
+                    // Create blob and force download
+                    const blob = await res.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.style.display = "none";
+                    a.href = url;
+                    // Try to get filename from header or fallback
+                    const header = res.headers.get('Content-Disposition');
+                    let dlName = `${filename.replace('.pdf', '')}_audio.wav`;
+                    if (header && header.indexOf('filename=') !== -1) {
+                        dlName = header.split('filename=')[1].replace(/['"]/g, '');
+                    }
+                    a.download = dlName;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+
+                    onCancel(); // Close on success
+                } catch (err) {
+                    alert("Download Failed: " + err.message);
+                } finally {
+                    setIsDownloading(false);
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex items-center justify-center p-4">
+                    <div className="bg-gray-800 text-white rounded-lg shadow-2xl max-w-md w-full border border-gray-700 font-sans">
+                        <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+                            <h2 className="font-bold text-lg flex items-center gap-2">🎧 Audio Options</h2>
+                            <button onClick={onCancel} className="text-gray-400 hover:text-white">✕</button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            {/* Voice Selector */}
+                            <div>
+                                <label className="block text-sm font-bold mb-1 text-gray-400">Select Voice</label>
+                                {loadingVoices ? (
+                                    <div className="text-sm opacity-50">Loading voices...</div>
+                                ) : (
+                                    <select
+                                        value={selectedVoice}
+                                        onChange={(e) => setSelectedVoice(e.target.value)}
+                                        className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500 outline-none"
+                                    >
+                                        {voices.map(v => (
+                                            <option key={v.id} value={v.id}>{v.name} ({v.lang})</option>
+                                        ))}
+                                    </select>
+                                )}
+                            </div>
+
+                            {/* Page Range */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-bold mb-1 text-gray-400">Start Page</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max={pageCount || 9999}
+                                        value={startPage}
+                                        onChange={(e) => setStartPage(e.target.value)}
+                                        className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500 outline-none"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold mb-1 text-gray-400">End Page</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max={pageCount || 9999}
+                                        value={endPage}
+                                        onChange={(e) => setEndPage(e.target.value)}
+                                        className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500 outline-none"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-gray-700 flex justify-end gap-2 bg-gray-900/50 rounded-b-lg">
+                            <button onClick={onCancel} className="px-4 py-2 text-gray-400 hover:text-white font-semibold">Cancel</button>
+                            <button
+                                onClick={handleDownload}
+                                disabled={isDownloading || loadingVoices}
+                                className={`px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold shadow-lg flex items-center gap-2 ${isDownloading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            >
+                                {isDownloading ? (
+                                    <><span>Processing...</span></>
+                                ) : (
+                                    <><span>Download WAV</span></>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [words, setWords] = useState([]);
+            const [images, setImages] = useState([]);
+            const [index, setIndex] = useState(0);
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [isDark, setIsDark] = useState(true);
+            const [loading, setLoading] = useState(false);
+
+            // Settings
+            const [settings, setSettings] = useState(PRESETS.orp_focused.config);
+
+            // Appearance
+            const [appearance, setAppearance] = useState({
+                fontSize: 60,
+                fontFamily: "'Courier New', monospace",
+                containerWidth: 1024 // max-width px
+            });
+
+            const timerRef = useRef(null);
+            const [showEditor, setShowEditor] = useState(false);
+            const [tempFile, setTempFile] = useState(null);
+
+            // Chapter Selection State
+            const [chapters, setChapters] = useState([]);
+            const [showChapterSelector, setShowChapterSelector] = useState(false);
+            const [showSettings, setShowSettings] = useState(false);
+            const [showAudioModal, setShowAudioModal] = useState(false);
+            const [manualBoxes, setManualBoxes] = useState(null);
+
+            // Dynamic Punctuation State
+            const [punctuationRules, setPunctuationRules] = useState([
+                { str: ".", val: 2.0 },
+                { str: ",", val: 1.5 },
+                { str: ";", val: 1.5 },
+                { str: "?", val: 2.0 },
+                { str: "!", val: 2.0 },
+                { str: "—", val: 1.5 },
+                { str: "\n\n", val: 3.0 } // Paragraph
+            ]);
+            const [newRuleStr, setNewRuleStr] = useState("");
+            const [newRuleVal, setNewRuleVal] = useState(1.5);
+
+            // Mobile Speed Control Ref
+            const speedInterval = useRef(null);
+
+            const startSpeedChange = (amount) => {
+                // Immediate change
+                setSettings(prev => ({ ...prev, wpm: Math.max(100, Math.min(1000, prev.wpm + amount)) }));
+                // Hold loop
+                if (speedInterval.current) clearInterval(speedInterval.current);
+                speedInterval.current = setInterval(() => {
+                    setSettings(prev => ({ ...prev, wpm: Math.max(100, Math.min(1000, prev.wpm + amount)) }));
+                }, 100);
+            };
+
+            const stopSpeedChange = () => {
+                if (speedInterval.current) clearInterval(speedInterval.current);
+            };
+
+            // Handlers (Upload, Finish, etc same as before)
+            const handleUpload = async (e) => {
+                const selected = e.target.files[0];
+                if (!selected) return;
+                if (selected.name.toLowerCase().endsWith(".pdf")) {
+                    const confirmManual = window.confirm("Detected PDF. Do you want to use Manual Layout Extraction?\n\nOK = Manual Editor\nCancel = Automatic Import");
+                    if (confirmManual) {
+                        setLoading(true);
+                        const formData = new FormData();
+                        formData.append("file", selected);
+                        try {
+                            const res = await fetch("/upload_temp", { method: "POST", body: formData });
+                            const data = await res.json();
+                            setTempFile(data);
+                            if (data.saved_boxes) {
+                                setManualBoxes(data.saved_boxes);
+                                if (window.confirm("Saved layout found. Use it?")) {
+                                    // Already set, editor will use it via tempFile/state logic if we pass it
+                                    // Actually we need to pass it to PdfManualEditor
+                                } else {
+                                    setManualBoxes({}); // Clear if rejected
+                                }
+                            } else {
+                                setManualBoxes({});
+                            }
+                            setShowEditor(true);
+                            setLoading(false);
+                        } catch (err) { alert(err); setLoading(false); }
+                        return;
+                    }
+                }
+                setLoading(true);
+                const formData = new FormData();
+                formData.append("file", selected);
+                try {
+                    const res = await fetch("/upload", { method: "POST", body: formData });
+                    const data = await res.json();
+                    setWords(data.words || []);
+                    setImages([]);
+                    setIndex(0);
+                    setIsPlaying(false);
+
+                    // Check for chapters
+                    if (data.chapters && data.chapters.length > 0) {
+                        setChapters(data.chapters);
+                        setShowChapterSelector(true);
+                    }
+                    setManualBoxes(null); // Reset manual boxes on new upload without manual flow
+                } catch (err) { alert(err); }
+                finally { setLoading(false); }
+            };
+
+            const handleManualFinish = async (boxesMap, startPage = 1) => {
+                setShowEditor(false);
+                setLoading(true);
+                setManualBoxes(boxesMap); // Store for TTS
+                try {
+                    const res = await fetch("/process_pdf", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            filename: tempFile.filename,
+                            manual_boxes: boxesMap,
+                            extract_images: true,
+                            start_page: startPage
+                        })
+                    });
+                    const data = await res.json();
+                    setWords(data.words || []);
+                    setImages(data.images || []);
+                    setIndex(0);
+                    setIsPlaying(false);
+                } catch (err) { alert(err); }
+                finally { setLoading(false); }
+            };
+
+            // Loop (Same)
+            useEffect(() => {
+                if (isPlaying && index < words.length) {
+                    const delay = (60000 / settings.wpm) * settings.chunkSize;
+                    let multiplier = 1;
+                    const word = words[index];
+
+                    if (word) {
+                        for (const rule of punctuationRules) {
+                            if (word.endsWith(rule.str) || (rule.str === "\\n\\n" && word === "\n\n")) {
+                                multiplier = rule.val;
+                                break;
+                            }
+                        }
+                        if (word.startsWith("[FIGURE")) multiplier = 4; // Keep legacy figure handling?
+                    }
+
+                    timerRef.current = setTimeout(() => setIndex(prev => prev + settings.chunkSize), delay * multiplier);
+                }
+                return () => clearTimeout(timerRef.current);
+            }, [isPlaying, index, words, settings, punctuationRules]);
+
+            // Spacebar Listener
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (e.code === "Space" && !showEditor) {
+                        // Prevent default scrolling only if we handle it
+                        e.preventDefault();
+                        setIsPlaying(prev => !prev);
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [showEditor]); // Dependencies? isPlaying? setState callback handles prev.
+
+            // Mouse Wheel Speed Control
+            React.useEffect(() => {
+                const handleWheel = (e) => {
+                    if (showEditor) return; // Don't interfere with manual editor scrolling
+                    // e.deltaY < 0 is Scroll Up -> Increase Speed
+                    // e.deltaY > 0 is Scroll Down -> Decrease Speed
+                    e.preventDefault();
+
+                    const delta = e.deltaY < 0 ? 10 : -10;
+
+                    setSettings(prev => {
+                        const newWpm = Math.max(100, Math.min(1000, prev.wpm + delta));
+                        return { ...prev, wpm: newWpm };
+                    });
+                };
+
+                // Use passive: false to allow preventDefault
+                window.addEventListener('wheel', handleWheel, { passive: false });
+                return () => window.removeEventListener('wheel', handleWheel);
+            }, [showEditor]);
+
+            const handleChapterSelect = (startIndex) => {
+                setIndex(startIndex);
+                setShowChapterSelector(false);
+            };
+
+            const handleAddRule = () => {
+                if (!newRuleStr) return;
+                setPunctuationRules(prev => [...prev, { str: newRuleStr, val: Number(newRuleVal) }]);
+                setNewRuleStr("");
+                setNewRuleVal(1.5);
+            };
+
+            const handleDeleteRule = (idx) => {
+                setPunctuationRules(prev => prev.filter((_, i) => i !== idx));
+            };
+
+            const progress = words.length ? ((index / words.length) * 100).toFixed(1) : 0;
+
+            if (showEditor && tempFile) {
+                return <PdfManualEditor
+                    filename={tempFile.filename}
+                    pageCount={tempFile.page_count}
+                    initialBoxes={manualBoxes}
+                    onCancel={() => setShowEditor(false)}
+                    onFinish={handleManualFinish}
+                />;
+            }
+
+            return (
+                <div className={`min-h-screen flex flex-col ${isDark ? 'bg-gray-800' : 'bg-gray-50'}`}>
+                    {showChapterSelector && (
+                        <ChapterSelector
+                            chapters={chapters}
+                            onSelect={handleChapterSelect}
+                            onCancel={() => setShowChapterSelector(false)}
+                        />
+                    )}
+                    {showAudioModal && (
+                        <AudioModal
+                            filename={tempFile ? tempFile.filename : (words.length > 0 ? "document.pdf" : "")}
+                            pageCount={tempFile ? tempFile.page_count : (chapters.length > 0 ? chapters.length : 999)}
+                            manualBoxes={manualBoxes}
+                            onCancel={() => setShowAudioModal(false)}
+                        />
+                    )}
+                    <header className={`p-4 shadow-md ${isDark ? 'bg-gray-900 text-white' : 'bg-white text-gray-800'} flex justify-between items-center`}>
+                        <h1 className="text-xl font-bold flex items-center gap-2"><span className="text-blue-500">⚡</span> SpeedReader Web</h1>
+                        <div className="flex gap-2">
+                            <button onClick={() => setShowAudioModal(true)} className="p-2 rounded hover:bg-gray-700 text-xl" title="Audio Options" disabled={!words.length}>🎧</button>
+                            <button onClick={() => setShowSettings(true)} className="p-2 rounded hover:bg-gray-700 text-xl" title="Settings">⚙️</button>
+                            <button onClick={() => setIsDark(!isDark)} className="p-2 rounded hover:bg-gray-700">{isDark ? "☀️" : "🌙"}</button>
+                        </div>
+                    </header>
+
+                    <main className="flex-1 flex flex-col w-full p-4 gap-6 items-center">
+
+                        {/* THE READER */}
+                        <div
+                            className={`rounded-xl shadow-lg overflow-hidden ${isDark ? 'bg-gray-900' : 'bg-white'} min-h-[400px] flex flex-col relative w-full transition-all duration-300`}
+                            style={{ maxWidth: appearance.containerWidth + 'px' }}
+                        >
+                            <div className="flex-1 flex flex-col justify-center items-center relative min-h-[250px] p-4"
+                                onTouchStart={(e) => {
+                                    // Hold to pause? Or Toggle?
+                                    // "Hold for pause or double tap"
+                                    // Let's implement Hold to Pause.
+                                    // Touch down -> Pause. Touch up -> Play (if it was playing?)
+                                    // Complex logic. 
+                                    // Simplest: Touch toggles play/pause like a click? 
+                                    // But users want to tap to scroll usually? No, this is RSVP.
+                                    // Let's try: Touch Start -> Pause. Touch End -> Resume (if wasn't paused manually).
+                                    // Actually user said: "Phone needs a 'Hold for pause' or a 'double tap for pause'"
+                                    // Double tap is good.
+                                    // Handling double tap:
+                                    // We can use a ref to store last tap time.
+                                }}
+                                onClick={(e) => {
+                                    // Handle Double Tap manually if basic Click doesn't suit
+                                    // Or just Click to Toggle Play/Pause on the READER area?
+                                    // Previously we didn't have click handler on reader area.
+                                    setIsPlaying(p => !p);
+                                }}
+                            >
+                                {loading ? (
+                                    <div className="animate-pulse text-blue-500 font-bold">Processing...</div>
+                                ) : (
+                                    <RSVPDisplay words={words} images={images} index={index} settings={settings} appearance={appearance} isDark={isDark} />
+                                )}
+                            </div>
+
+                            {/* Controls */}
+                            <div className={`p-4 ${isDark ? 'bg-gray-800' : 'bg-gray-100'} border-t ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                                <div className="flex flex-col items-center gap-4 mb-4">
+
+                                    {/* Mobile Speed Buttons */}
+                                    <div className="flex gap-4 w-full md:hidden mb-2 items-center">
+                                        <button
+                                            className="flex-1 bg-gray-200 dark:bg-gray-700 p-4 rounded-xl font-bold text-xl active:bg-blue-600 active:text-white transition-colors"
+                                            onPointerDown={() => startSpeedChange(-10)}
+                                            onPointerUp={stopSpeedChange}
+                                            onPointerLeave={stopSpeedChange}
+                                        >-</button>
+                                        <div className="flex items-center justify-center font-mono text-xl font-bold w-24">
+                                            {settings.wpm}
+                                        </div>
+                                        <button
+                                            className="flex-1 bg-gray-200 dark:bg-gray-700 p-4 rounded-xl font-bold text-xl active:bg-blue-600 active:text-white transition-colors"
+                                            onPointerDown={() => startSpeedChange(10)}
+                                            onPointerUp={stopSpeedChange}
+                                            onPointerLeave={stopSpeedChange}
+                                        >+</button>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <button onClick={() => setIndex(prev => Math.max(0, prev - settings.skipInterval))} className="p-3 rounded-full bg-gray-600 hover:bg-gray-500 text-white shadow transition-transform hover:scale-110 active:scale-95" title={`Rewind ${settings.skipInterval} words`}>
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 19 2 12 11 5 11 19"></polygon><polygon points="22 19 13 12 22 5 22 19"></polygon></svg>
+                                        </button>
+
+                                        <button onClick={() => setIsPlaying(!isPlaying)} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-full font-bold shadow-lg transition-transform hover:scale-105 active:scale-95 text-xl min-w-[140px]">
+                                            {isPlaying ? "PAUSE" : "PLAY"}
+                                        </button>
+
+                                        <button onClick={() => setIndex(prev => Math.min(words.length - 1, prev + settings.skipInterval))} className="p-3 rounded-full bg-gray-600 hover:bg-gray-500 text-white shadow transition-transform hover:scale-110 active:scale-95" title={`Forward ${settings.skipInterval} words`}>
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 19 22 12 13 5 13 19"></polygon><polygon points="2 19 11 12 2 5 2 19"></polygon></svg>
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 opacity-70 hover:opacity-100 transition-opacity">
+                                        <span className="text-xs font-bold uppercase">Skip Size:</span>
+                                        <input
+                                            type="range"
+                                            min="10"
+                                            max="500"
+                                            step="10"
+                                            value={settings.skipInterval}
+                                            onChange={(e) => setSettings({ ...settings, skipInterval: Number(e.target.value) })}
+                                            className="w-24 h-1 bg-gray-400 rounded-lg appearance-none cursor-pointer"
+                                        />
+                                        <span className="text-xs font-mono w-16 text-right">{settings.skipInterval} w</span>
+                                        <div className="w-px h-4 bg-gray-400 mx-2"></div>
+                                        <button onClick={() => { setIsPlaying(false); setIndex(0); }} className="text-xs hover:text-red-400 font-bold uppercase">Reset</button>
+                                    </div>
+                                </div>
+
+                                <div className="w-full bg-gray-400/30 rounded-full h-2 mb-2 cursor-pointer hover:h-3 transition-all" onClick={(e) => {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const x = e.clientX - rect.left;
+                                    const pct = x / rect.width;
+                                    setIndex(Math.floor(pct * words.length));
+                                }}>
+                                    <div className="bg-blue-600 h-full rounded-full transition-all" style={{ width: `${progress}%` }}></div>
+                                </div>
+                                <div className={`text-center text-xs font-mono opacity-60 ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>{index} / {words.length} ({progress}%)</div>
+
+                                <ContextView words={words} index={index} isDark={isDark} appearance={appearance} />
+                            </div>
+                        </div>
+
+                        {/* CONTROL PANELS */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-5xl">
+
+                            {/* LEFT: PRESETS */}
+                            <div className={`p-6 rounded-xl shadow ${isDark ? 'bg-gray-700 text-white' : 'bg-white text-gray-800'}`}>
+                                <h3 className="font-bold mb-4 border-b pb-2">📚 Reading Presets</h3>
+                                <div className="space-y-4">
+                                    {Object.values(PRESETS).map(preset => (
+                                        <div key={preset.id} onClick={() => setSettings(preset.config)}
+                                            className={`p-3 rounded-lg cursor-pointer transition-all border ${JSON.stringify(settings) === JSON.stringify(preset.config) ? 'bg-blue-600 border-blue-500 text-white shadow-md scale-[1.02]' : 'hover:bg-gray-600 border-transparent hover:border-gray-500 bg-gray-800/20'}`}>
+                                            <div className="font-bold text-sm">{preset.label}</div>
+                                            <div className="text-xs opacity-70 italic mt-1">{preset.citation}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* RIGHT: FINE TUNING & APPEARANCE */}
+                            <div className={`p-6 rounded-xl shadow ${isDark ? 'bg-gray-700 text-white' : 'bg-white text-gray-800'} flex flex-col gap-6`}>
+                                {/* Load */}
+                                <div className="p-3 bg-gray-900/30 rounded border border-gray-600">
+                                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1 block">Load Document</label>
+                                    <div className="flex flex-col gap-2">
+                                        <input type="file" onChange={handleUpload} className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer" accept=".pdf,.txt,.docx,.epub" />
+                                        <div className="flex gap-2">
+                                            <input type="text" placeholder="Or paste URL..." onKeyDown={e => {
+                                                if (e.key === 'Enter') {
+                                                    const url = e.target.value;
+                                                    if (url) {
+                                                        setLoading(true);
+                                                        fetch("/fetch_url", {
+                                                            method: "POST",
+                                                            headers: { "Content-Type": "application/json" },
+                                                            body: JSON.stringify({ url })
+                                                        })
+                                                            .then(res => res.json())
+                                                            .then(data => {
+                                                                setLoading(false);
+                                                                if (data.type === 'pdf') {
+                                                                    setTempFile(data); // Will trigger showEditor logic if we add that check
+                                                                    // Need to ask user for manual mode same as file upload?
+                                                                    // For now, let's assume if it's PDF via URL, we offer the same choice or just default to something?
+                                                                    // Let's implement the choice logic:
+                                                                    // Actually, we can just trigger the manual editor confirmation here too?
+                                                                    // Or just auto-open editor for URL PDFs for now.
+                                                                    if (window.confirm("PDF Loaded from URL. Use Manual Layout Editor?")) {
+                                                                        setShowEditor(true);
+                                                                    } else {
+                                                                        // Treat as legacy upload 
+                                                                        // Wait, we need to process it.
+                                                                        // Since it's already on server, we need a way to say "process this file I just uploaded/fetched"
+                                                                        // Re-using process_pdf with empty manual_boxes works for auto.
+                                                                        fetch("/process_pdf", {
+                                                                            method: "POST",
+                                                                            headers: { "Content-Type": "application/json" },
+                                                                            body: JSON.stringify({ filename: data.filename, manual_boxes: {}, extract_images: true })
+                                                                        })
+                                                                            .then(r => r.json())
+                                                                            .then(d => {
+                                                                                setWords(d.words || []);
+                                                                                setImages(d.images || []);
+                                                                                setIndex(0);
+                                                                            });
+                                                                    }
+                                                                } else if (data.type === 'epub' || (data.chapters && data.chapters.length > 0)) {
+                                                                    // EPUB Handling
+                                                                    setWords(data.words || []); // Pre-load words
+                                                                    setImages(data.images || []);
+                                                                    setChapters(data.chapters || []);
+                                                                    setShowChapterSelector(true);
+                                                                    setIndex(0); // Default to start
+                                                                } else {
+                                                                    // Text / Docx / Fallback
+                                                                    if (data.words && data.words.length > 0) {
+                                                                        setWords(data.words);
+                                                                        setImages(data.images || []);
+                                                                        setIndex(0);
+                                                                    } else {
+                                                                        alert("URL loaded but no content found/supported.");
+                                                                    }
+                                                                }
+
+                                                            })
+                                                            .catch(err => { alert(err); setLoading(false); });
+                                                    }
+                                                }
+                                            }} className="flex-1 p-2 text-sm rounded bg-gray-800 border-gray-600 text-white placeholder-gray-500" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Appearance Controls */}
+                                <div>
+                                    <h3 className="font-bold mb-4 border-b pb-2 flex items-center gap-2"><span>👁️</span> Appearance</h3>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="text-sm font-semibold mb-1 block">Font Selection</label>
+                                            <select value={appearance.fontFamily} onChange={e => setAppearance({ ...appearance, fontFamily: e.target.value })}
+                                                className={`w-full p-2 rounded ${isDark ? 'bg-gray-800 border-gray-600 text-white' : 'bg-gray-100 border-gray-300'}`}>
+                                                {FONTS.map((f, i) => <option key={i} value={f.family}>{f.label}</option>)}
+                                            </select>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-sm font-semibold block mb-1">Size: {appearance.fontSize}px</label>
+                                                <input type="range" min="20" max="150" step="5" value={appearance.fontSize} onChange={e => setAppearance({ ...appearance, fontSize: Number(e.target.value) })} className="w-full" />
+                                            </div>
+                                            <div>
+                                                <label className="text-sm font-semibold block mb-1">Width: {appearance.containerWidth < 2000 ? appearance.containerWidth + 'px' : 'Max'}</label>
+                                                <input type="range" min="600" max="2500" step="50" value={appearance.containerWidth} onChange={e => setAppearance({ ...appearance, containerWidth: Number(e.target.value) })} className="w-full" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Speed & Mechanics */}
+                                <div>
+                                    <h3 className="font-bold mb-4 border-b pb-2 mt-2">⚙️ Mechanics</h3>
+
+                                    {/* Speed & Chunk */}
+                                    <div className="space-y-4 mb-2">
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1"><label>Speed</label><span className="font-mono text-blue-400">{settings.wpm} WPM</span></div>
+                                            <input type="range" min="100" max="1000" step="10" value={settings.wpm} onChange={e => setSettings({ ...settings, wpm: Number(e.target.value) })} className="w-full" />
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between text-sm mb-1"><label>Chunk Size</label><span className="font-mono text-blue-400">{settings.chunkSize} Words</span></div>
+                                            <input type="range" min="1" max="10" step="1" value={settings.chunkSize} onChange={e => setSettings({ ...settings, chunkSize: Number(e.target.value) })} className="w-full" />
+                                        </div>
+                                        <div className="text-xs text-center text-gray-500 italic mt-2">More settings available in the ⚙️ menu above.</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
+
+
+                        <ImageGallery images={images} isDark={isDark} />
+
+                        {
+                            showSettings && (
+                                <div className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex items-center justify-center p-4">
+                                    <div className={`rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col ${isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}`}>
+                                        <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+                                            <h2 className="font-bold text-lg flex items-center gap-2">⚙️ Advanced Settings</h2>
+                                            <button onClick={() => setShowSettings(false)} className="text-gray-500 hover:text-red-500">✕</button>
+                                        </div>
+                                        <div className="p-6 overflow-y-auto space-y-8">
+
+                                            {/* Equalizer */}
+                                            <div>
+                                                <h3 className="font-bold mb-4 border-b border-gray-600 pb-2 flex items-center gap-2"><span>⚖️</span> Punctuation Equalizer</h3>
+                                                <div className="text-xs opacity-70 mb-2">Adjust delay multipliers for specific text patterns.</div>
+                                                <div className="space-y-2 mb-4 max-h-40 overflow-y-auto bg-black/10 p-2 rounded border border-gray-500/30">
+                                                    {punctuationRules.map((rule, i) => (
+                                                        <div key={i} className="flex justify-between items-center text-sm p-1">
+                                                            <span className="font-mono bg-white/10 px-1 rounded">"{rule.str === "\\n\\n" ? "¶" : rule.str}"</span>
+                                                            <span className="font-bold text-blue-400">{rule.val}x</span>
+                                                            <button onClick={() => handleDeleteRule(i)} className="text-red-500 hover:text-red-700 font-bold px-2">×</button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <input placeholder="String" value={newRuleStr} onChange={e => setNewRuleStr(e.target.value)} className="w-24 p-2 text-sm border rounded bg-transparent border-gray-600" />
+                                                    <input type="number" step="0.1" value={newRuleVal} onChange={e => setNewRuleVal(e.target.value)} className="w-24 p-2 text-sm border rounded bg-transparent border-gray-600" />
+                                                    <button onClick={handleAddRule} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-sm font-bold">ADD</button>
+                                                </div>
+                                            </div>
+
+                                            {/* Mechanics */}
+                                            <div>
+                                                <h3 className="font-bold mb-4 border-b border-gray-600 pb-2">🎯 Reading Mechanics</h3>
+                                                {/* ORP Pivot */}
+                                                <div className="mb-6">
+                                                    <div className="flex justify-between text-sm mb-1"><label>ORP Pivot Position</label><span className="font-mono text-blue-400">{Math.round(settings.orpOffset * 100)}%</span></div>
+                                                    <input type="range" min="0.1" max="0.9" step="0.05" value={settings.orpOffset} onChange={e => setSettings({ ...settings, orpOffset: Number(e.target.value) })} className="w-full" />
+                                                </div>
+
+                                                {/* Toggles */}
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    <label className="flex items-center gap-2 cursor-pointer select-none p-3 rounded bg-black/10 hover:bg-black/20"><input type="checkbox" checked={settings.guideLines} onChange={e => setSettings({ ...settings, guideLines: e.target.checked })} /> <span>Show Guide Lines</span></label>
+                                                    <label className="flex items-center gap-2 cursor-pointer select-none p-3 rounded bg-black/10 hover:bg-black/20"><input type="checkbox" checked={settings.bionicBolding} onChange={e => setSettings({ ...settings, bionicBolding: e.target.checked })} /> <span>Bionic Bolding</span></label>
+                                                    <label className="flex items-center gap-2 cursor-pointer select-none p-3 rounded bg-black/10 hover:bg-black/20"><input type="checkbox" checked={settings.orpCentering} onChange={e => setSettings({ ...settings, orpCentering: e.target.checked })} /> <span>Force ORP Centering</span></label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="p-4 border-t border-gray-700 bg-black/10 rounded-b-xl text-right">
+                                            <button onClick={() => setShowSettings(false)} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold">Close</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )
+                        }
+
+                    </main >
+                </div >
+            );
+        };
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>

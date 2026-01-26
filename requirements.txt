@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+pdfplumber
+python-docx
+EbookLib
+beautifulsoup4
+Pillow
+requests
+pytesseract
+pyttsx3
+pypiwin32
