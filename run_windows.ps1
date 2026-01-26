@@ -23,16 +23,17 @@ catch {
 }
 
 # 2. Virtual Environment
-if (-not (Test-Path "venv")) {
-    Write-Host "[INFO] Creating Virtual Environment..." -ForegroundColor Cyan
-    python -m venv venv
+# User requested root-level venv (Scripts folder in current dir)
+if (-not (Test-Path "Scripts")) {
+    Write-Host "[INFO] Creating Virtual Environment in current folder..." -ForegroundColor Cyan
+    python -m venv .
 }
 
 # 3. Dependencies
-# Use pip from venv
-$pipPath = "venv\Scripts\pip.exe"
+# Use pip from local Scripts folder
+$pipPath = ".\Scripts\pip.exe"
 if (-not (Test-Path $pipPath)) {
-    Write-Host "[ERROR] pip not found in venv. Something went wrong." -ForegroundColor Red
+    Write-Host "[ERROR] pip not found in Scripts folder. Venv creation might have failed." -ForegroundColor Red
     exit 1
 }
 
@@ -73,5 +74,5 @@ Write-Host ""
 Start-Process "http://localhost:$port"
 
 # Run Uvicorn from venv
-$uvicornPath = "venv\Scripts\uvicorn.exe"
-& python -m uvicorn backend:app --reload --host 0.0.0.0 --port $port
+$uvicornPath = ".\Scripts\uvicorn.exe"
+& $uvicornPath backend:app --reload --host 0.0.0.0 --port $port

@@ -1,8 +1,21 @@
 # Python
 __pycache__/
 *.pyc
-venv/
 .env
+
+# Root Virtual Environment Folders
+Scripts/
+Lib/
+Include/
+bin/
+lib/
+share/
+pyvenv.cfg
+.Python
+
+# Old venv style (just in case)
+venv/
+.venv/
 
 # Temp Data
 temp_uploads/

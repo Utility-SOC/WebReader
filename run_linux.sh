@@ -1,35 +1,39 @@
 #!/bin/bash
 
+# Configuration
+PORT=8182
+VENV_DIR="."
+PYTHON="$VENV_DIR/bin/python3"
+PIP="$VENV_DIR/bin/pip"
+UVICORN="$VENV_DIR/bin/uvicorn"
+
 echo "=================================================="
 echo "     Scientific Speed Reader - Launcher"
 echo "=================================================="
 echo
 
-# Check for Python
+# 1. Check for Python
 if ! command -v python3 &> /dev/null; then
     echo "[ERROR] python3 could not be found."
     echo "Please install Python 3 (sudo apt install python3 python3-venv)"
     exit 1
 fi
 
-# Create Venv
-if [ ! -d "venv" ]; then
+# 2. Create Venv
+if [ ! -d "$VENV_DIR" ]; then
     echo "[INFO] Creating Virtual Environment..."
-    python3 -m venv venv
+    python3 -m venv "$VENV_DIR"
 fi
 
-# Activate
-source venv/bin/activate
-
-# Install Deps
+# 3. Install Deps
 echo "[INFO] Checking dependencies..."
-pip install -r requirements.txt > /dev/null 2>&1
+"$PIP" install -r requirements.txt > /dev/null 2>&1
 if [ $? -ne 0 ]; then
     echo "[INFO] Installing dependencies..."
-    pip install -r requirements.txt
+    "$PIP" install -r requirements.txt
 fi
 
-# Check for Dependencies (espeak, tesseract)
+# 4. Check for System Dependencies (espeak, tesseract)
 MISSING=""
 if ! command -v tesseract &> /dev/null; then
     MISSING="$MISSING tesseract-ocr"
@@ -47,15 +51,12 @@ if [ ! -z "$MISSING" ]; then
     if command -v apt-get &> /dev/null; then
         sudo apt-get update && sudo apt-get install -y $MISSING
     else
-        echo "[ERROR] 'apt-get' not found. Please install manualy:$MISSING"
+        echo "[ERROR] 'apt-get' not found. Please install manually:$MISSING"
     fi
     echo
 fi
 
-# Configuration
-PORT=8182
-
-# Launch
+# 5. Launch
 echo "[INFO] Starting Server on port $PORT..."
 if [[ "$OSTYPE" == "darwin"* ]]; then
     open "http://localhost:$PORT"
@@ -63,4 +64,5 @@ else
     xdg-open "http://localhost:$PORT" &> /dev/null &
 fi
 
-uvicorn backend:app --reload --host 0.0.0.0 --port $PORT
+# Run using explicit python path to module
+"$PYTHON" -m uvicorn backend:app --reload --host 0.0.0.0 --port $PORT
