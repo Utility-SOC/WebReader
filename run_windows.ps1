@@ -1,6 +1,10 @@
 # Scientific Speed Reader - Launcher
 $ErrorActionPreference = "Stop"
 
+# --- CONFIGURATION ---
+$port = 8000
+# ---------------------
+
 Write-Host "==================================================" -ForegroundColor Green
 Write-Host "     Scientific Speed Reader - Launcher"
 Write-Host "=================================================="
@@ -61,7 +65,6 @@ catch {
 }
 
 # 5. Launch
-$port = 8000
 Write-Host ""
 Write-Host "[INFO] Starting Server on http://localhost:$port" -ForegroundColor Green
 Write-Host "[INFO] Browser should open automatically."
