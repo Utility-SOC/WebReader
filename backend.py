@@ -609,6 +609,10 @@ def cleanup_text_for_tts(text: str) -> str:
     # 1. Normalize line endings
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     
+    # 1b. Remove PDF artifacts (cid:12), [FIGURE...], and excessive weird symbols
+    text = re.sub(r'\(cid:\d+\)', ' ', text)
+    text = re.sub(r'\[FIGURE:.*?\]', ' ', text) # Skip reading figure tags
+    
     # 2. Replace single newlines with space (unwrap lines)
     # We use regex to find newlines that are NOT followed by another newline, and NOT preceded by one
     # But simpler: split by \n\n to get paragraphs, then join lines in each paragraph
@@ -662,7 +666,8 @@ $speak.Dispose()
 """
         script_path = output_path + ".ps1"
         try:
-            with open(script_path, "w", encoding="utf-8") as f:
+            # Use utf-8-sig (BOM) so PowerShell 5.1+ reads the encoding correctly
+            with open(script_path, "w", encoding="utf-8-sig") as f:
                 f.write(ps_script)
             
             # Run it
