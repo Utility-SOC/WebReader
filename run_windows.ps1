@@ -52,12 +52,20 @@ try {
         Write-Host "Attempting install via Winget..." -ForegroundColor Cyan
         
         winget install -e --id UB-Mannheim.TesseractOCR
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "[SUCCESS] Tesseract installed. You may need to restart." -ForegroundColor Green
+        
+        # Refresh env logic for current session
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        
+        # Check if installed (regardless of winget exit code)
+        if (Get-Command "tesseract" -ErrorAction SilentlyContinue) {
+            Write-Host "[SUCCESS] Tesseract is installed." -ForegroundColor Green
+        }
+        elseif (Test-Path "C:\Program Files\Tesseract-OCR\tesseract.exe") {
+            Write-Host "[SUCCESS] Tesseract found in Program Files." -ForegroundColor Green
         }
         else {
-            Write-Host "[ERROR] Auto-install failed. Please install manually:" -ForegroundColor Red
-            Write-Host "https://github.com/UB-Mannheim/tesseract/wiki"
+            Write-Host "[WARNING] Auto-install finished but 'tesseract' not found in PATH." -ForegroundColor Yellow
+            Write-Host "You may need to restart your computer."
         }
     }
 }
