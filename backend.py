@@ -612,6 +612,23 @@ def cleanup_text_for_tts(text: str) -> str:
     # 1b. Remove PDF artifacts (cid:12), [FIGURE...], and excessive weird symbols
     text = re.sub(r'\(cid:\d+\)', ' ', text)
     text = re.sub(r'\[FIGURE:.*?\]', ' ', text) # Skip reading figure tags
+
+    # 1c. Aggressive Sanitization for Shell Safety
+    # Remove backticks (PowerShell escape), dollar signs (variable expansion), and other risky symbols
+    # We allow basic punctuation, letters, numbers, and common safe symbols
+    # This prevents "Unexpected token" errors in PowerShell
+    text = re.sub(r'[`$]', '', text) 
+    
+    # Optional: Replace weird quotes with standard ones
+    text = text.replace('‘', "'").replace('’', "'").replace('“', '"').replace('”', '"')
+    
+    # Remove anything that isn't alphanumeric or basic punctuation
+    # This is slightly heavy-handed but ensures stability for CLI TTS
+    # text = re.sub(r'[^\w\s.,?!:;\'\"()-]', ' ', text) # Too aggressive for some languages?
+    # Let's just remove the known breakers for now:
+    text = re.sub(r'[^\x00-\x7F]+', ' ', text) # Strip non-ASCII if we really want to be safe, or just...
+    # Better: just strip the known shell-breakers that we missed.
+    # The backtick and $ removal above covers the main PowerShell issues.
     
     # 2. Replace single newlines with space (unwrap lines)
     # We use regex to find newlines that are NOT followed by another newline, and NOT preceded by one
