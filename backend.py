@@ -8,6 +8,7 @@ import re
 import xml.etree.ElementTree as ET
 from typing import List, Optional, Dict, Any, Tuple
 import requests
+import winreg
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.responses import JSONResponse, HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,6 +49,57 @@ if not TESSERACT_CMD:
                 # Add to PATH so subprocess usage (shutil.which) works later
                 os.environ["PATH"] += os.pathsep + os.path.dirname(p)
                 break
+
+    if not TESSERACT_CMD:
+        # Check Registry (HKLM/HKCU)
+        try:
+            search_terms = ["tesseract-ocr", "tesseract"]
+            roots = [
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+                (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Uninstall")
+            ]
+            for hive, subkey_root in roots:
+                try:
+                    with winreg.OpenKey(hive, subkey_root) as key:
+                        for i in range(0, winreg.QueryInfoKey(key)[0]):
+                            try:
+                                subkey_name = winreg.EnumKey(key, i)
+                                with winreg.OpenKey(key, subkey_name) as sub:
+                                    try:
+                                        dn, _ = winreg.QueryValueEx(sub, "DisplayName")
+                                        if any(s in str(dn).lower() for s in search_terms):
+                                            # Try InstallLocation
+                                            try:
+                                                loc, _ = winreg.QueryValueEx(sub, "InstallLocation")
+                                                if loc:
+                                                    exe = os.path.join(loc, "tesseract.exe")
+                                                    if os.path.exists(exe):
+                                                        TESSERACT_CMD = exe
+                                                        break
+                                            except: pass
+                                            # Try UninstallString
+                                            try:
+                                                uninst, _ = winreg.QueryValueEx(sub, "UninstallString")
+                                                if uninst:
+                                                    uninst = uninst.replace('"', '').replace("'", "")
+                                                    loc = os.path.dirname(uninst)
+                                                    exe = os.path.join(loc, "tesseract.exe")
+                                                    if os.path.exists(exe):
+                                                        TESSERACT_CMD = exe
+                                                        break
+                                            except: pass
+                                    except: pass
+                            except: pass
+                        if TESSERACT_CMD: break
+                except: pass
+                if TESSERACT_CMD: break
+        except Exception as e:
+            logger.warning(f"Registry check failed: {e}")
+
+    if TESSERACT_CMD:
+        # Add to PATH so subprocess checks work
+        os.environ["PATH"] += os.pathsep + os.path.dirname(TESSERACT_CMD)
 
 if TESSERACT_CMD and os.path.exists(TESSERACT_CMD):
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
@@ -163,7 +215,7 @@ def extract_text_from_pdf_range(
                     # AUTOMATIC MODE
                     txt = ""
                     if not force_ocr:
-                        txt = page.extract_text(layout=True)
+                        txt = page.extract_text(layout=True, x_tolerance=1)
                     
                     if txt and txt.strip():
                         extracted_text += txt + "\n"
@@ -215,7 +267,7 @@ def extract_text_from_pdf_range(
                             if b_type == 'text':
                                 txt = ""
                                 if not force_ocr:
-                                    txt = cropped.extract_text(layout=True)
+                                    txt = cropped.extract_text(layout=True, x_tolerance=1)
                                 
                                 if txt and txt.strip():
                                     extracted_text += txt + "\n"
@@ -553,7 +605,7 @@ async def legacy_upload(file: UploadFile = File(...), force_ocr: bool = False):
                 for i, page in enumerate(pdf.pages):
                     t = ""
                     if not force_ocr:
-                        t = page.extract_text(layout=True)
+                        t = page.extract_text(layout=True, x_tolerance=1)
                     
                     if t and t.strip():
                         text += t + "\n"
