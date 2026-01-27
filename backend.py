@@ -762,9 +762,33 @@ $speak.GetInstalledVoices() | ForEach-Object {
                      
         elif "linux" in system:
              # espeak --voices
-             res = subprocess.run(["espeak", "--voices"], capture_output=True, text=True)
-             # Parse espeak output... simple implementation skipped for now, returning empty is safe
-             pass
+             # Pty Language Age/Gender VoiceName File Other Langs
+             try:
+                 res = subprocess.run(["espeak", "--voices"], capture_output=True, text=True)
+                 lines = res.stdout.strip().split("\n")
+                 # Skip header
+                 if len(lines) > 1:
+                     for line in lines[1:]:
+                         parts = line.split()
+                         if len(parts) >= 4:
+                             # This is rough parsing, but usually works for espeak
+                             # parts[1] is lang, parts[3] is name
+                             name = parts[3]
+                             lang = parts[1]
+                             voices_list.append({
+                                 "name": f"espeak {name}",
+                                 "id": name,
+                                 "lang": lang
+                             })
+             except FileNotFoundError:
+                 pass # espeak might not be installed
+
+        # Ensure at least one option exists
+        if not voices_list:
+            voices_list.append({"name": "System Default", "id": "", "lang": "en"})
+        else:
+            # prepend Default option
+            voices_list.insert(0, {"name": "System Default", "id": "", "lang": "en"})
 
         return {"voices": voices_list}
     except Exception as e:
