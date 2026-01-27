@@ -186,7 +186,7 @@ def extract_text_from_pdf_range(
                         
                         # Calculate PDF coordinates
                         if box.get('relative'):
-                             # Relative
+                             # Relative (0.0 - 1.0)
                             x0 = x * page.width
                             top = y * page.height
                             x1 = (x + w) * page.width
@@ -199,6 +199,12 @@ def extract_text_from_pdf_range(
                             x1 = (x + w) * scale
                             bottom = (y + h) * scale
                         
+                        # Clamp to page dimensions (Snap to edge)
+                        x0 = max(0, min(float(page.width), x0))
+                        top = max(0, min(float(page.height), top))
+                        x1 = max(0, min(float(page.width), x1))
+                        bottom = max(0, min(float(page.height), bottom))
+
                         if x1 <= x0 or bottom <= top: continue
                         crop_box = (x0, top, x1, bottom)
                         
