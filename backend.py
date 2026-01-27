@@ -641,17 +641,21 @@ def generate_tts_cli(text: str, output_path: str, voice_id: Optional[str] = None
     if "windows" in system:
         # PowerShell script to generate WAV
         # Escape single quotes in text for PowerShell
+        # Escape single quotes in text for PowerShell
         safe_text = text.replace("'", "''")
         
-        # Build PowerShell command
-        # We write a temp script to avoid complex escaping issues on command line
+        # Use absolute path and escape specific chars for PowerShell syntax if needed
+        # Actually, best to use forward slashes for cross-compatibility or double backslashes
+        safe_output_path = os.path.abspath(output_path)
+        
         ps_script = f"""
 Add-Type -AssemblyName System.Speech
 $speak = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$speak.SetOutputToWaveFile('{output_path}')
+$outPath = '{safe_output_path}'
+$speak.SetOutputToWaveFile($outPath)
 # Select voice if provided (basic matching)
 if ('{voice_id}' -ne 'None' -and '{voice_id}' -ne '') {{
-    try {{ $speak.SelectVoice('{voice_id}') }} catch {{ }}
+    try {{ $speak.SelectVoice('{voice_id}') }} catch {{ Write-Host "Voice selection failed: $_" }}
 }}
 $speak.Speak('{safe_text}')
 $speak.Dispose()
@@ -662,7 +666,15 @@ $speak.Dispose()
                 f.write(ps_script)
             
             # Run it
-            subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", script_path], check=True, capture_output=True)
+            process = subprocess.run(
+                ["powershell", "-ExecutionPolicy", "Bypass", "-File", script_path], 
+                check=True, 
+                capture_output=True, 
+                text=True
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"TTS Generation failed. Stdout: {e.stdout} \nStderr: {e.stderr}")
+            raise Exception(f"TTS Backend Error: {e.stderr}")
         finally:
             if os.path.exists(script_path):
                 os.remove(script_path)
