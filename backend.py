@@ -40,11 +40,13 @@ if not TESSERACT_CMD:
         common_paths = [
             r"C:\Program Files\Tesseract-OCR\tesseract.exe",
             r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-            os.path.expanduser(r"~\AppData\Local\Programs\Tesseract-OCR\tesseract.exe")
+            os.path.expandvars(r"%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe")
         ]
         for p in common_paths:
             if os.path.exists(p):
                 TESSERACT_CMD = p
+                # Add to PATH so subprocess usage (shutil.which) works later
+                os.environ["PATH"] += os.pathsep + os.path.dirname(p)
                 break
 
 if TESSERACT_CMD and os.path.exists(TESSERACT_CMD):
