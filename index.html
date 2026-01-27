@@ -828,7 +828,18 @@
                         })
                     });
 
-                    if (!res.ok) throw new Error(await res.text());
+                    if (!res.ok) {
+                        if (res.status === 404) {
+                            throw new Error("Session Expired: The file is no longer on the server. Please upload it again.");
+                        }
+                        const errText = await res.text();
+                        try {
+                            const json = JSON.parse(errText);
+                            throw new Error(json.detail || errText);
+                        } catch (e) {
+                            throw new Error(errText);
+                        }
+                    }
 
                     // Create blob and force download
                     const blob = await res.blob();
