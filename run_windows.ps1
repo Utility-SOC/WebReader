@@ -109,11 +109,16 @@ catch {
 # 5. Launch
 Write-Host ""
 Write-Host "[INFO] Starting Server on http://localhost:$port" -ForegroundColor Green
-Write-Host "[INFO] Browser should open automatically."
+Write-Host "[INFO] Browser will open in ~15 seconds..." -ForegroundColor Cyan
 Write-Host ""
 
-Start-Process "http://localhost:$port"
+# Launch browser in background after delay (to give Uvicorn time to start)
+Start-Job -ScriptBlock { 
+    param($p)
+    Start-Sleep -Seconds 15
+    Start-Process "http://localhost:$p"
+} -ArgumentList $port | Out-Null
 
-# Run Uvicorn from venv
+# Run Uvicorn from venv (Blocking)
 $uvicornPath = ".\Scripts\uvicorn.exe"
 & $uvicornPath backend:app --reload --host 0.0.0.0 --port $port
