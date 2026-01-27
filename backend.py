@@ -851,6 +851,13 @@ def download_tts(
         raise HTTPException(404, "File not found")
         
     try:
+        # Check if manual_boxes not provided, try to load from disk
+        if not manual_boxes:
+            loaded = load_layout(filename)
+            if loaded:
+                logger.info(f"TTS Download: Loaded saved layout for {filename}")
+                manual_boxes = loaded
+
         # Extract text using the shared helper
         text, _ = extract_text_from_pdf_range(
             path, 
