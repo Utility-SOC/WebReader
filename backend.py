@@ -13,6 +13,10 @@ from fastapi.responses import JSONResponse, HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from bs4 import BeautifulSoup
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("SpeedReaderAPI")
+
 # Document parsers
 import pdfplumber
 import docx
@@ -51,10 +55,6 @@ else:
 
 # Image handling
 from PIL import Image
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("SpeedReaderAPI")
 
 app = FastAPI()
 
