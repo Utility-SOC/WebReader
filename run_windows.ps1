@@ -45,56 +45,62 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # 4. Check/Install Tesseract
-$tess = Get-Command "tesseract" -ErrorAction SilentlyContinue
-    
-# Check common location if not in PATH
-$tessPathDefault = "C:\Program Files\Tesseract-OCR\tesseract.exe"
-if ($null -eq $tess -and (Test-Path $tessPathDefault)) {
-    Write-Host "[INFO] Tesseract found in Program Files but not in PATH." -ForegroundColor Yellow
-         
-    # 1. Add to Current Session PATH immediately so app works NOW
-    $env:Path += ";C:\Program Files\Tesseract-OCR"
-    Write-Host "[INFO] Added to current session PATH." -ForegroundColor Gray
-         
-    # 2. Trigger UAC to add to System PATH permanently
-    Write-Host "[INFO] Requesting Admin privileges to add to System PATH permanently..." -ForegroundColor Cyan
-    $proc = Start-Process powershell -ArgumentList "-NoProfile -Command `"[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';C:\Program Files\Tesseract-OCR', 'Machine')`"" -Verb RunAs -PassThru
-    $proc.WaitForExit()
-    Write-Host "[SUCCESS] Added to System PATH." -ForegroundColor Green
-         
-    # Re-check
+try {
     $tess = Get-Command "tesseract" -ErrorAction SilentlyContinue
-}
-
-if ($null -eq $tess) {
-    Write-Host "[WARNING] Tesseract OCR not found." -ForegroundColor Yellow
-    Write-Host "Attempting install via Winget..." -ForegroundColor Cyan
-        
-    winget install -e --id UB-Mannheim.TesseractOCR
-        
-    # Refresh env logic for current session
-    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-        
-    # Check if installed (regardless of winget exit code)
-    if (Get-Command "tesseract" -ErrorAction SilentlyContinue) {
-        Write-Host "[SUCCESS] Tesseract is installed." -ForegroundColor Green
-    }
-    elseif (Test-Path "C:\Program Files\Tesseract-OCR\tesseract.exe") {
-        Write-Host "[SUCCESS] Tesseract found in Program Files." -ForegroundColor Green
-        # Try UAC mechanism again if it was just installed
+    
+    # Check common location if not in PATH
+    $tessPathDefault = "C:\Program Files\Tesseract-OCR\tesseract.exe"
+    if ($null -eq $tess -and (Test-Path $tessPathDefault)) {
+        Write-Host "[INFO] Tesseract found in Program Files but not in PATH." -ForegroundColor Yellow
+         
+        # 1. Add to Current Session PATH immediately so app works NOW
+        $env:Path += ";C:\Program Files\Tesseract-OCR"
+        Write-Host "[INFO] Added to current session PATH." -ForegroundColor Gray
+         
+        # 2. Trigger UAC to add to System PATH permanently (User Request)
+        Write-Host "[INFO] Requesting Admin privileges to add to System PATH permanently..." -ForegroundColor Cyan
         try {
-            Start-Process powershell -ArgumentList "-NoProfile -Command `"[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';C:\Program Files\Tesseract-OCR', 'Machine')`"" -Verb RunAs -Wait
-            $env:Path += ";C:\Program Files\Tesseract-OCR"
+            $proc = Start-Process powershell -ArgumentList "-NoProfile -Command `"[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';C:\Program Files\Tesseract-OCR', 'Machine')`"" -Verb RunAs -PassThru
+            $proc.WaitForExit()
+            Write-Host "[SUCCESS] Added to System PATH." -ForegroundColor Green
         }
         catch {
-            Write-Host "[WARN] Could not auto-add to PATH (UAC cancelled?)." -ForegroundColor Yellow
+            Write-Host "[WARN] Failed to add to System PATH (UAC cancelled?)" -ForegroundColor Yellow
+        }
+         
+        # Re-check
+        $tess = Get-Command "tesseract" -ErrorAction SilentlyContinue
+    }
+
+    if ($null -eq $tess) {
+        Write-Host "[WARNING] Tesseract OCR not found." -ForegroundColor Yellow
+        Write-Host "Attempting install via Winget..." -ForegroundColor Cyan
+        
+        winget install -e --id UB-Mannheim.TesseractOCR
+        
+        # Refresh env logic for current session
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        
+        # Check if installed (regardless of winget exit code)
+        if (Get-Command "tesseract" -ErrorAction SilentlyContinue) {
+            Write-Host "[SUCCESS] Tesseract is installed." -ForegroundColor Green
+        }
+        elseif (Test-Path "C:\Program Files\Tesseract-OCR\tesseract.exe") {
+            Write-Host "[SUCCESS] Tesseract found in Program Files." -ForegroundColor Green
+            # Try UAC mechanism again if it was just installed
+            try {
+                Start-Process powershell -ArgumentList "-NoProfile -Command `"[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';C:\Program Files\Tesseract-OCR', 'Machine')`"" -Verb RunAs -Wait
+                $env:Path += ";C:\Program Files\Tesseract-OCR"
+            }
+            catch {
+                Write-Host "[WARN] Could not auto-add to PATH (UAC cancelled?)." -ForegroundColor Yellow
+            }
+        }
+        else {
+            Write-Host "[WARNING] Auto-install finished but 'tesseract' not found in PATH." -ForegroundColor Yellow
+            Write-Host "You may need to restart your computer."
         }
     }
-    else {
-        Write-Host "[WARNING] Auto-install finished but 'tesseract' not found in PATH." -ForegroundColor Yellow
-        Write-Host "You may need to restart your computer."
-    }
-}
 }
 catch {
     Write-Host "[WARN] Tesseract check encountered an error: $_"
