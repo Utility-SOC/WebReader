@@ -21,12 +21,33 @@ import pytesseract
 from pytesseract import Output
 
 # Configure Tesseract
-# Use environment variable if available, otherwise fallback to known path
-TESSERACT_CMD = os.getenv("TESSERACT_CMD", r'F:\Program Files\Tesseract-OCR\tesseract.exe')
-if os.path.exists(TESSERACT_CMD):
+# Configure Tesseract
+# Try to find tesseract in PATH or common locations
+TESSERACT_CMD = os.getenv("TESSERACT_CMD")
+
+if not TESSERACT_CMD:
+    # Check PATH
+    from shutil import which
+    tess_in_path = which("tesseract")
+    if tess_in_path:
+        TESSERACT_CMD = tess_in_path
+    else:
+        # Check common Windows paths
+        common_paths = [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            os.path.expanduser(r"~\AppData\Local\Programs\Tesseract-OCR\tesseract.exe")
+        ]
+        for p in common_paths:
+            if os.path.exists(p):
+                TESSERACT_CMD = p
+                break
+
+if TESSERACT_CMD and os.path.exists(TESSERACT_CMD):
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
+    logger.info(f"Tesseract found at: {TESSERACT_CMD}")
 else:
-    logging.warning(f"Tesseract executable not found at {TESSERACT_CMD}. OCR features will fail.")
+    logger.warning("Tesseract executable not found in PATH or common headers. OCR features will fail.")
 
 # Image handling
 from PIL import Image
