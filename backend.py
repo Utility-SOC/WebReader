@@ -722,6 +722,10 @@ def get_voices():
     try:
         if "windows" in system:
              # Use PowerShell to list voices
+             # We write to a temp file to avoid command-line quoting issues
+             script_name = f"list_voices_{uuid.uuid4()}.ps1"
+             script_path = os.path.join(TEMP_DIR, script_name)
+             
              ps_script = """
 Add-Type -AssemblyName System.Speech
 $speak = New-Object System.Speech.Synthesis.SpeechSynthesizer
@@ -730,16 +734,31 @@ $speak.GetInstalledVoices() | ForEach-Object {
     Write-Output "$($v.Name)|$($v.Id)|$($v.Culture)"
 }
 """
-             res = subprocess.run(["powershell", "-Command", ps_script], capture_output=True, text=True)
-             lines = res.stdout.strip().split("\n")
-             for line in lines:
-                 parts = line.strip().split("|")
-                 if len(parts) >= 2:
-                     voices_list.append({
-                         "name": parts[0],
-                         "id": parts[0], # Using Name as ID often works better for SelectVoice, or use parts[1] is specific
-                         "lang": parts[2] if len(parts) > 2 else ""
-                     })
+             try:
+                 with open(script_path, "w", encoding="utf-8") as f:
+                     f.write(ps_script)
+                 
+                 res = subprocess.run(
+                     ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script_path], 
+                     capture_output=True, 
+                     text=True
+                 )
+                 
+                 if res.stderr:
+                     logger.warning(f"PowerShell stderr: {res.stderr}")
+                     
+                 lines = res.stdout.strip().split("\n")
+                 for line in lines:
+                     parts = line.strip().split("|")
+                     if len(parts) >= 2:
+                         voices_list.append({
+                             "name": parts[0],
+                             "id": parts[0],
+                             "lang": parts[2] if len(parts) > 2 else ""
+                         })
+             finally:
+                 if os.path.exists(script_path):
+                     os.remove(script_path)
                      
         elif "linux" in system:
              # espeak --voices
