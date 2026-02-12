@@ -67,6 +67,10 @@ function App() {
         formData.append("file", selected);
         try {
           const res = await fetch("/upload_temp", { method: "POST", body: formData });
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Upload Failed (${res.status}): ${errText}`);
+          }
           const data = await res.json();
           setTempFile(data);
           if (data.saved_boxes) {
@@ -89,6 +93,10 @@ function App() {
     try {
       // Use Async Upload
       const res = await fetch("/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Upload Failed (${res.status}): ${errText}`);
+      }
       const data = await res.json();
 
       if (data.task_id) {
@@ -160,6 +168,10 @@ function App() {
           start_page: startPage
         })
       });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Processing Failed (${res.status}): ${errText}`);
+      }
       const data = await res.json();
       setWords(data.words || []);
       setImages(data.images || []);
@@ -197,13 +209,13 @@ function App() {
       filename={tempFile.filename}
       pageCount={tempFile.page_count}
       boxes={manualBoxes}
-      onSave={handleManualFinish}
+      onFinish={handleManualFinish}
       onCancel={() => { setShowEditor(false); setTempFile(null); setManualBoxes(null); }}
     />;
   }
 
   return (
-    <div className={`min-h-screen transition-colors duration-500 ${isDark ? 'bg-gray-950 text-gray-100' : 'bg-gray-50 text-gray-900'} font-sans selection:bg-blue-500 selection:text-white`}>
+    <div className={`min-h-screen flex flex-col items-center justify-start pt-20 transition-colors duration-500 ${isDark ? 'bg-gray-950 text-gray-100' : 'bg-gray-50 text-gray-900'} font-sans selection:bg-blue-500 selection:text-white`}>
 
       {/* Background Gradients */}
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
@@ -212,10 +224,10 @@ function App() {
         <div className={`absolute -bottom-[10%] left-[20%] w-[60%] h-[40%] rounded-full blur-[128px] opacity-10 ${isDark ? 'bg-teal-600' : 'bg-teal-400'}`}></div>
       </div>
 
-      <div className="relative z-10 flex flex-col items-center min-h-screen p-4 sm:p-8">
+      <div className="relative z-10 flex flex-col items-center w-full p-4 sm:p-8">
 
         {/* Header */}
-        <header className="w-full max-w-4xl flex justify-between items-center mb-12">
+        <header className="w-full flex justify-between items-center mb-12" style={{ maxWidth: appearance.containerWidth + 'px' }}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
               <span className="text-xl font-bold text-white">W</span>
@@ -235,13 +247,13 @@ function App() {
         </header>
 
         {/* Main Content Area */}
-        <main className="w-full max-w-4xl flex-1 flex flex-col items-center justify-center gap-8">
+        <main className="w-full flex-1 flex flex-col items-center gap-8">
 
           {/* Reader Card */}
           <div
             className={`relative w-full rounded-3xl overflow-hidden transition-all duration-500 ${isDark
-                ? 'bg-gray-900/60 border border-gray-800 backdrop-blur-xl shadow-2xl shadow-black/50'
-                : 'bg-white/80 border border-gray-100 backdrop-blur-xl shadow-2xl shadow-blue-100/50'
+              ? 'bg-gray-900/60 border border-gray-800 backdrop-blur-xl shadow-2xl shadow-black/50'
+              : 'bg-white/80 border border-gray-100 backdrop-blur-xl shadow-2xl shadow-blue-100/50'
               }`}
             style={{ maxWidth: appearance.containerWidth + 'px' }}
           >

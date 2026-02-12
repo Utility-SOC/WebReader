@@ -50,15 +50,21 @@ app.add_middleware(
 )
 
 # Temp storage for PDF flows
-# Use absolute paths for robustness
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Adjusted path: go up one level since we are in backend/
-ROOT_DIR = os.path.dirname(BASE_DIR)
-TEMP_DIR = os.path.join(ROOT_DIR, "temp_uploads")
-os.makedirs(TEMP_DIR, exist_ok=True)
 
-# Layout Persistence Storage
-LAYOUTS_DIR = os.path.join(ROOT_DIR, "layouts")
+# Path Resolution Fix for Docker vs Local
+# In Docker, we are in /app, and temp_uploads is in /app/temp_uploads (mounted)
+# Locally, we are in .../backend, and temp_uploads is .../temp_uploads (sibling)
+if os.path.isdir(os.path.join(BASE_DIR, "temp_uploads")):
+    ROOT_DIR = BASE_DIR
+    TEMP_DIR = os.path.join(BASE_DIR, "temp_uploads")
+    LAYOUTS_DIR = os.path.join(BASE_DIR, "layouts")
+else:
+    ROOT_DIR = os.path.dirname(BASE_DIR)
+    TEMP_DIR = os.path.join(ROOT_DIR, "temp_uploads")
+    LAYOUTS_DIR = os.path.join(ROOT_DIR, "layouts")
+
+os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(LAYOUTS_DIR, exist_ok=True)
 import json
 
