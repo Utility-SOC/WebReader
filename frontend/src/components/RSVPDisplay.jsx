@@ -46,25 +46,28 @@ const RSVPDisplay = ({ words, index, settings, appearance, isDark, images }) => 
     };
 
     return (
+    return (
         <div
-            className={`relative w-full border-y-2 ${isDark ? 'border-gray-700 bg-gray-900 text-gray-100' : 'border-gray-200 bg-white text-gray-900'} transition-colors duration-300`}
+            className={`relative w-full border-y-2 py-12 transition-colors duration-300 flex items-center justify-center overflow-hidden ${isDark ? 'border-gray-800 bg-gray-950/50 text-gray-100' : 'border-gray-100 bg-white/50 text-gray-900'}`}
             style={{
                 fontFamily: appearance.fontFamily,
-                fontSize: `${appearance.fontSize}px`
+                fontSize: `${appearance.fontSize}px`,
+                height: '400px'
             }}
         >
             {settings.guideLines && (
                 <>
-                    <div className={`guide-line guide-top ${isDark ? 'dark' : ''}`}></div>
-                    <div className={`guide-line guide-bottom ${isDark ? 'dark' : ''}`}></div>
+                    <div className={`absolute left-0 right-0 top-[35%] h-px w-full opacity-20 ${isDark ? 'bg-white' : 'bg-black'}`}></div>
+                    <div className={`absolute left-0 right-0 bottom-[35%] h-px w-full opacity-20 ${isDark ? 'bg-white' : 'bg-black'}`}></div>
                 </>
             )}
-            <div className="pivot-container" style={{ minHeight: appearance.fontSize * 2 + 'px' }}>
-                <div className="pivot-left">{settings.bionicBolding ? applyBionic(processed.left) : processed.left}</div>
-                <div className={`pivot-center ${processed.isPivot ? 'text-red-500' : ''}`}>{processed.center}</div>
-                <div className="pivot-right">{settings.bionicBolding ? applyBionic(processed.right) : processed.right}</div>
+            <div className="flex items-baseline w-full justify-center text-center relative z-10 px-4">
+                <div className="flex-1 text-right opacity-60 font-medium whitespace-pre">{settings.bionicBolding ? applyBionic(processed.left) : processed.left}</div>
+                <div className={`mx-1 font-bold transform transition-transform duration-75 ${processed.isPivot ? 'text-blue-500 scale-110' : ''}`}>{processed.center}</div>
+                <div className="flex-1 text-left opacity-60 font-medium whitespace-pre">{settings.bionicBolding ? applyBionic(processed.right) : processed.right}</div>
             </div>
         </div>
+    );
     );
 };
 
