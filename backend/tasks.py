@@ -1,7 +1,7 @@
-from .celery_app import celery_app
-from .database import SessionLocal
-from .models import Document, ProcessingTask, TaskStatus
-from .utils import extract_text_from_pdf_range, process_text, load_epub_manual, extract_text_with_ocr
+from celery_app import celery_app
+from database import SessionLocal
+from models import Document, ProcessingTask, TaskStatus
+from utils import extract_text_from_pdf_range, process_text, load_epub_manual, extract_text_with_ocr
 import os
 import logging
 from sqlalchemy.orm import Session

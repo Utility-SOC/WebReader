@@ -13,16 +13,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 # Internal imports
-from .database import engine, get_db, Base
-from .models import Document, ProcessingTask, TaskStatus
-from .utils import (
+# Internal imports
+from database import engine, get_db, Base
+from models import Document, ProcessingTask, TaskStatus
+from utils import (
     extract_text_from_pdf_range, 
     process_text, 
     load_epub_manual, 
     extract_text_with_ocr, 
     TESSERACT_CMD
 )
-from .tasks import process_pdf_task
+from tasks import process_pdf_task
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
