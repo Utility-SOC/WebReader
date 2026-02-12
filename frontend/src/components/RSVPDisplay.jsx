@@ -46,7 +46,6 @@ const RSVPDisplay = ({ words, index, settings, appearance, isDark, images }) => 
     };
 
     return (
-    return (
         <div
             className={`relative w-full border-y-2 py-12 transition-colors duration-300 flex items-center justify-center overflow-hidden ${isDark ? 'border-gray-800 bg-gray-950/50 text-gray-100' : 'border-gray-100 bg-white/50 text-gray-900'}`}
             style={{
@@ -67,7 +66,6 @@ const RSVPDisplay = ({ words, index, settings, appearance, isDark, images }) => 
                 <div className="flex-1 text-left opacity-60 font-medium whitespace-pre">{settings.bionicBolding ? applyBionic(processed.right) : processed.right}</div>
             </div>
         </div>
-    );
     );
 };
 
