@@ -30,6 +30,7 @@ To change the port (default: 8182):
 3.  **PDF Layout Editor**:
     *   If a PDF has complex layouts (columns, sidebars), the app may ask you to confirm the reading order.
     *   Draw boxes around the text blocks in the order you want them read.
+    *   You may also draw "image" boxes so you can scroll through them as reading. 
     *   Click "Save Layout" to process the file.
 
 ## Troubleshooting

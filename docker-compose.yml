@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./temp_uploads:/app/temp_uploads
+      - ./layouts:/app/layouts
+      - ./data:/app/data
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - TESSERACT_CMD=/usr/bin/tesseract
+    depends_on:
+      - redis
+
+  worker:
+    build: ./backend
+    command: celery -A celery_app worker --loglevel=info
+    volumes:
+      - ./backend:/app
+      - ./temp_uploads:/app/temp_uploads
+      - ./layouts:/app/layouts
+      - ./data:/app/data
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - TESSERACT_CMD=/usr/bin/tesseract
+    depends_on:
+      - redis
+      - backend
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - API_TARGET=http://backend:8000
+    depends_on:
+      - backend
+
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"

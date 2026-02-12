@@ -121,4 +121,5 @@ Start-Job -ScriptBlock {
 
 # Run Uvicorn from venv (Blocking)
 $uvicornPath = ".\Scripts\uvicorn.exe"
-& $uvicornPath backend:app --reload --host 0.0.0.0 --port $port
+# Updated for backend isolation refactor
+& $uvicornPath backend.main:app --reload --host 0.0.0.0 --port $port
