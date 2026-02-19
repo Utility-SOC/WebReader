@@ -13,10 +13,15 @@ logger = logging.getLogger(__name__)
 @celery_app.task(bind=True)
 def process_document_background(self, task_id: str = None, document_id: int = None, manual_boxes: dict = None, extract_images: bool = False, start_page: int = 1, force_ocr: bool = False):
     """
-    Background task to process a PDF or other document.
+    Celery wrapper for background processing.
     """
-    # task_id might be passed explicitly or we use self.request.id
     if not task_id: task_id = self.request.id
+    process_document_core(task_id, document_id, manual_boxes, extract_images, start_page, force_ocr)
+
+def process_document_core(task_id: str, document_id: int, manual_boxes: dict = None, extract_images: bool = False, start_page: int = 1, force_ocr: bool = False):
+    """
+    Core processing logic (Database-aware).
+    """
     db: Session = SessionLocal()
     task_record = db.query(ProcessingTask).filter(ProcessingTask.id == task_id).first()
     

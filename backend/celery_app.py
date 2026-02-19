@@ -8,7 +8,8 @@ REDIS_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 celery_app = Celery(
     "webreader",
     broker=REDIS_URL,
-    backend=REDIS_URL
+    backend=REDIS_URL,
+    include=['backend.tasks']
 )
 
 celery_app.conf.update(

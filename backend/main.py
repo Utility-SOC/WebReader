@@ -479,65 +479,23 @@ def cleanup_text_for_tts(text: str) -> str:
 
 def generate_tts_cli(text: str, output_path: str, voice_id: Optional[str] = None):
     """
-    Generate TTS using system CLI tools.
-    Windows: PowerShell System.Speech
-    Linux: espeak / espeak-ng
+    Generate TTS using edge-tts (Python CLI).
+    This works cross-platform without system dependencies like espeak.
     """
     # Clean text first
     text = cleanup_text_for_tts(text)
     
-    system = platform.system().lower()
+    # Default voice
+    if not voice_id:
+        voice_id = "en-US-AriaNeural"
+        
+    cmd = ["edge-tts", "--text", text, "--write-media", output_path, "--voice", voice_id]
     
-    if "windows" in system:
-        # PowerShell script to generate WAV
-        # Escape single quotes in text for PowerShell
-        # Escape single quotes in text for PowerShell
-        safe_text = text.replace("'", "''")
-        
-        # Use absolute path and escape specific chars for PowerShell syntax if needed
-        # Actually, best to use forward slashes for cross-compatibility or double backslashes
-        safe_output_path = os.path.abspath(output_path)
-        
-        ps_script = f"""
-Add-Type -AssemblyName System.Speech
-$speak = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$outPath = '{safe_output_path}'
-$speak.SetOutputToWaveFile($outPath)
-# Select voice if provided (basic matching)
-if ('{voice_id}' -ne 'None' -and '{voice_id}' -ne '') {{
-    try {{ $speak.SelectVoice('{voice_id}') }} catch {{ Write-Host "Voice selection failed: $_" }}
-}}
-$speak.Speak('{safe_text}')
-$speak.Dispose()
-"""
-        script_path = output_path + ".ps1"
-        try:
-            # Use utf-8-sig (BOM) so PowerShell 5.1+ reads the encoding correctly
-            with open(script_path, "w", encoding="utf-8-sig") as f:
-                f.write(ps_script)
-            
-            # Run it
-            process = subprocess.run(
-                ["powershell", "-ExecutionPolicy", "Bypass", "-File", script_path], 
-                check=True, 
-                capture_output=True, 
-                text=True
-            )
-        except subprocess.CalledProcessError as e:
-            logger.error(f"TTS Generation failed. Stdout: {e.stdout} \nStderr: {e.stderr}")
-            raise Exception(f"TTS Backend Error: {e.stderr}")
-        finally:
-            if os.path.exists(script_path):
-                os.remove(script_path)
-                
-    elif "linux" in system:
-        # Use espeak
-        cmd = ["espeak", "-w", output_path, text]
-        if voice_id:
-            cmd.extend(["-v", voice_id])
-        subprocess.run(cmd, check=True)
-    else:
-        raise Exception("Unsupported OS for CLI TTS")
+    try:
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"TTS Generation failed. Stdout: {e.stdout} \nStderr: {e.stderr}")
+        raise Exception(f"TTS Backend Error via edge-tts: {e.stderr}")
 
 @app.post("/tts")
 def generate_tts(
@@ -584,84 +542,15 @@ def generate_tts(
 
 @app.get("/tts/voices")
 def get_voices():
-    """List available system voices (Best effort)."""
-    voices_list = []
-    system = platform.system().lower()
-    
-    try:
-        if "windows" in system:
-             # Use PowerShell to list voices
-             # We write to a temp file to avoid command-line quoting issues
-             script_name = f"list_voices_{uuid.uuid4()}.ps1"
-             script_path = os.path.join(TEMP_DIR, script_name)
-             
-             ps_script = """
-Add-Type -AssemblyName System.Speech
-$speak = New-Object System.Speech.Synthesis.SpeechSynthesizer
-$speak.GetInstalledVoices() | ForEach-Object {
-    $v = $_.VoiceInfo
-    Write-Output "$($v.Name)|$($v.Id)|$($v.Culture)"
-}
-"""
-             try:
-                 with open(script_path, "w", encoding="utf-8") as f:
-                     f.write(ps_script)
-                 
-                 res = subprocess.run(
-                     ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script_path], 
-                     capture_output=True, 
-                     text=True
-                 )
-                 
-                 if res.stderr:
-                     logger.warning(f"PowerShell stderr: {res.stderr}")
-                     
-                 lines = res.stdout.strip().split("\n")
-                 for line in lines:
-                     parts = line.strip().split("|")
-                     if len(parts) >= 2:
-                         voices_list.append({
-                             "name": parts[0],
-                             "id": parts[0],
-                             "lang": parts[2] if len(parts) > 2 else ""
-                         })
-             finally:
-                 if os.path.exists(script_path):
-                     os.remove(script_path)
-                     
-        elif "linux" in system:
-             # espeak --voices
-             # Pty Language Age/Gender VoiceName File Other Langs
-             try:
-                 res = subprocess.run(["espeak", "--voices"], capture_output=True, text=True)
-                 lines = res.stdout.strip().split("\n")
-                 # Skip header
-                 if len(lines) > 1:
-                     for line in lines[1:]:
-                         parts = line.split()
-                         if len(parts) >= 4:
-                             # This is rough parsing, but usually works for espeak
-                             # parts[1] is lang, parts[3] is name
-                             name = parts[3]
-                             lang = parts[1]
-                             voices_list.append({
-                                 "name": f"espeak {name}",
-                                 "id": name,
-                                 "lang": lang
-                             })
-             except FileNotFoundError:
-                 pass # espeak might not be installed
-
-        # Ensure at least one option exists
-        if not voices_list:
-            voices_list.append({"name": "System Default", "id": "", "lang": "en"})
-        else:
-            # prepend Default option
-            voices_list.insert(0, {"name": "System Default", "id": "", "lang": "en"})
-
-        return {"voices": voices_list}
-    except Exception as e:
-         return {"error": str(e), "voices": []}
+    """List available edge-tts voices (Simulated or actually fetched)."""
+    # For now, return a curated list of popular edge-tts voices to avoid slow startup
+    voices_list = [
+        {"name": "English (US) - Aria", "id": "en-US-AriaNeural", "lang": "en-US"},
+        {"name": "English (US) - Guy", "id": "en-US-GuyNeural", "lang": "en-US"},
+        {"name": "English (UK) - Sonia", "id": "en-GB-SoniaNeural", "lang": "en-GB"},
+        {"name": "English (UK) - Ryan", "id": "en-GB-RyanNeural", "lang": "en-GB"},
+    ]
+    return {"voices": voices_list}
 
 @app.post("/tts/download")
 def download_tts(
