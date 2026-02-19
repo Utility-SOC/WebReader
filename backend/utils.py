@@ -316,3 +316,18 @@ def load_epub_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
     except Exception as e:
         logger.error(f"EPUB Error: {e}")
         return "", []
+
+def process_image_file(path: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Process a single image file (PNG, JPG, WEBP) and return OCR text.
+    Returns (text, []) - no extracted images list needed for a single image usually, 
+    but we could return the image itself as an 'extracted image' if desired.
+    """
+    try:
+        from PIL import Image
+        img = Image.open(path)
+        text = extract_text_with_ocr(img)
+        return text, []
+    except Exception as e:
+        logger.error(f"Image Processing Error: {e}")
+        return "", []

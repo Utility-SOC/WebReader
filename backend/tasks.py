@@ -1,26 +1,28 @@
-from celery_app import celery_app
-from database import SessionLocal
-from models import Document, ProcessingTask, TaskStatus
-from utils import extract_text_from_pdf_range, process_text, load_epub_manual, extract_text_with_ocr
+from .database import SessionLocal
+from .models import Document, ProcessingTask, TaskStatus
+from .utils import extract_text_from_pdf_range, process_text, load_epub_manual, process_image_file
 import os
+from .celery_app import celery_app
 import logging
 from sqlalchemy.orm import Session
-import json
+from sqlalchemy import func
+import datetime
 
 logger = logging.getLogger(__name__)
 
 @celery_app.task(bind=True)
-def process_pdf_task(self, document_id: int, manual_boxes: dict = None, extract_images: bool = False, start_page: int = 1, force_ocr: bool = False):
+def process_document_background(self, task_id: str = None, document_id: int = None, manual_boxes: dict = None, extract_images: bool = False, start_page: int = 1, force_ocr: bool = False):
     """
     Background task to process a PDF or other document.
     """
+    # task_id might be passed explicitly or we use self.request.id
+    if not task_id: task_id = self.request.id
     db: Session = SessionLocal()
-    task_record = db.query(ProcessingTask).filter(ProcessingTask.id == self.request.id).first()
+    task_record = db.query(ProcessingTask).filter(ProcessingTask.id == task_id).first()
     
     if not task_record:
-        # Should not happen ideally
-        logger.error(f"Task record not found for {self.request.id}")
-        return {"error": "Task record not found"}
+        logger.error(f"Task record not found for {task_id}")
+        return
 
     try:
         task_record.status = TaskStatus.PROCESSING
@@ -38,14 +40,24 @@ def process_pdf_task(self, document_id: int, manual_boxes: dict = None, extract_
         extracted_images = []
         chapters = []
 
-        if doc.file_type == "pdf":
+        file_type = doc.file_type.lower() if doc.file_type else "unknown"
+
+        if file_type == "pdf":
             extracted_text, extracted_images = extract_text_from_pdf_range(
                 path, start_page, end_page=None, manual_boxes=manual_boxes, force_ocr=force_ocr
             )
-        elif doc.file_type == "epub":
+        elif file_type == "epub":
             extracted_text, chapters = load_epub_manual(path)
+        elif file_type in ["jpg", "jpeg", "png", "webp", "image"]:
+             extracted_text, extracted_images = process_image_file(path)
+        elif file_type == "txt":
+             try:
+                 with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                     extracted_text = f.read()
+             except Exception as e:
+                 logger.error(f"TXT read error: {e}")
         else:
-             # Basic text fallback (TODO: Add docx support here using utils)
+             # Basic text fallback detection
              pass 
 
         words = process_text(extracted_text)
@@ -63,13 +75,12 @@ def process_pdf_task(self, document_id: int, manual_boxes: dict = None, extract_
         task_record.completed_at = func.now()
         db.commit()
         
-        return {"status": "success", "word_count": len(words)}
+        logger.info(f"Task {task_id} completed successfully. Words: {len(words)}")
 
     except Exception as e:
-        logger.error(f"Task failed: {e}")
+        logger.error(f"Task {task_id} failed: {e}")
         task_record.status = TaskStatus.FAILED
         task_record.error_message = str(e)
         db.commit()
-        raise e
     finally:
         db.close()

@@ -7,23 +7,23 @@ import zipfile
 import re
 from typing import List, Optional, Dict, Any, Tuple
 import requests
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Depends
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse, HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 # Internal imports
 # Internal imports
-from database import engine, get_db, Base
-from models import Document, ProcessingTask, TaskStatus
-from utils import (
+from .database import engine, get_db, Base
+from .models import Document, ProcessingTask, TaskStatus
+from .utils import (
     extract_text_from_pdf_range, 
     process_text, 
     load_epub_manual, 
     extract_text_with_ocr, 
     TESSERACT_CMD
 )
-from tasks import process_pdf_task
+from .tasks import process_document_background
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -144,6 +144,10 @@ async def upload_temp(file: UploadFile = File(...)):
             saved = load_layout(safe_name)
             if saved:
                 info["saved_boxes"] = saved
+        elif safe_name.lower().endswith(".epub"):
+            info["type"] = "epub"
+        elif any(safe_name.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]):
+             info["type"] = "image"
                 
         return info
     except Exception as e:
@@ -255,6 +259,12 @@ async def fetch_url(item: Dict[str, str] = Body(...)):
             ext = ".epub"
         elif ".docx" in lower_name or "wordprocessing" in content_type:
             ext = ".docx"
+        elif any(x in lower_name or x in content_type for x in ["image", ".png", ".jpg", ".jpeg", ".webp"]):
+            # Simple detection
+            if ".png" in lower_name: ext = ".png"
+            elif ".jpg" in lower_name or ".jpeg" in lower_name: ext = ".jpg"
+            elif ".webp" in lower_name: ext = ".webp"
+            else: ext = ".jpg" # Default image
         else:
             ext = ".txt" # Default
             
@@ -286,6 +296,8 @@ async def fetch_url(item: Dict[str, str] = Body(...)):
              info["chapters"] = chapters
              info["words"] = process_text(text)
              info["word_count"] = len(info["words"])
+        elif filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+             info["type"] = "image"
                 
         return info
         
@@ -310,9 +322,12 @@ async def upload_document(
             f.write(await file.read())
             
         file_type = "unknown"
-        if safe_name.lower().endswith(".pdf"): file_type = "pdf"
-        elif safe_name.lower().endswith(".epub"): file_type = "epub"
-        elif safe_name.lower().endswith(".txt"): file_type = "txt"
+        file_type = "unknown"
+        lower_name = safe_name.lower()
+        if lower_name.endswith(".pdf"): file_type = "pdf"
+        elif lower_name.endswith(".epub"): file_type = "epub"
+        elif lower_name.endswith(".txt"): file_type = "txt"
+        elif lower_name.endswith((".png", ".jpg", ".jpeg", ".webp")): file_type = "image"
         
         # 2. Create Document Record
         doc = Document(
@@ -324,23 +339,28 @@ async def upload_document(
         db.commit()
         db.refresh(doc)
         
-        # 3. Trigger Task
-        # We pass the doc.id so the task can retrieve the file path and update the record
-        task_res = process_pdf_task.delay(
-            document_id=doc.id, 
-            force_ocr=force_ocr
-        )
+        # 3. Trigger Task (Celery)
+        # We pass task_id explicitly to match our DB record, or usage of task_res.id is fine too depending on preference.
+        # But our task accepts task_id.
+        task_id = str(uuid.uuid4())
         
         # 4. Create Task Record
         task_record = ProcessingTask(
-            id=task_res.id,
+            id=task_id,
             document_id=doc.id,
             status=TaskStatus.PENDING
         )
         db.add(task_record)
         db.commit()
         
-        return {"task_id": task_res.id, "document_id": doc.id, "message": "Processing started"}
+        # Use delay()
+        process_document_background.apply_async(
+            args=[task_id, doc.id],
+            kwargs={"force_ocr": force_ocr, "manual_boxes": None, "extract_images": True}, # extract_images defaults true often
+            task_id=task_id # Force the task ID to match our DB
+        )
+        
+        return {"task_id": task_id, "document_id": doc.id, "message": "Processing started"}
         
     except Exception as e:
         logger.error(f"Async upload failed: {e}")
