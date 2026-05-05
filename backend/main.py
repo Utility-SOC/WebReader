@@ -114,7 +114,7 @@ from fastapi.responses import FileResponse
 def api_root():
     index_path = os.path.join(ROOT_DIR, "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path)
+        return FileResponse(index_path, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
     return {"message": "WebReader API", "version": "1.0"}
 
 @app.get("/health")
