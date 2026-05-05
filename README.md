@@ -68,9 +68,16 @@ If you select **OK**, you will enter the Manual Layout Editor. This powerful too
 1. **Draw Boxes**: Simply click and drag your mouse over the text blocks you want to read. A blue box will appear around your selection.
 2. **Fit & Resize**: You can adjust the edges of your drawn boxes by clicking and dragging the black squares in the corners. If the page is too large or too small, toggle the **FIT / 1:1** button in the top toolbar to adjust the zoom level.
 ![Drawing Boxes](assets/pdf_box_drawing.png)
-3. **Set Starting Page**: If the actual content of your book starts on a later page (e.g., page 15 after the table of contents and prefaces), navigate to that page using the arrows in the top left, and click **"Start Here"**. This marks the current page as the starting point for your reading session.
+3. **Auto-Copy Layouts**: When you navigate to the next page using the top navigation arrows, you will notice that you do not have to redraw your rectangles! WebReader automatically copies your layout boxes from the previous page, allowing you to quickly verify or tweak the boxes rather than starting from scratch.
+![Page Navigation](assets/pdf_page_nav.png)
+![Auto-copied Layouts](assets/pdf_auto_copy.png)
+4. **Extract Images**: Want to save a picture from the PDF? Click the **Image button** (the picture icon) in the upper central toolbar. This allows you to draw an orange box to pull out pictures in the exact same way you pull out text!
+![Image Tool](assets/pdf_image_tool.jpg)
+5. **Mixed Content**: You can freely mix text and image extractions on a single page to capture everything important without reading the figures as text.
+![Image and Text Extraction](assets/pdf_image_text.png)
+6. **Set Starting Page**: If the actual content of your book starts on a later page (e.g., page 15 after the table of contents and prefaces), navigate to that page using the arrows in the top left, and click **"Start Here"**. This marks the current page as the starting point for your reading session.
 ![Start Here Button](assets/pdf_toolbar.png)
-4. **Finish**: Once you have highlighted the layout blocks on the starting page, click **DONE** in the top right. WebReader will automatically apply that layout structure to the subsequent pages and begin processing!
+7. **Finish**: Once you have highlighted the layout blocks on the starting page, click **DONE** in the top right. WebReader will begin processing!
 
 **EPUB Chapter Selection**: 
 When uploading an EPUB, the application automatically extracts the table of contents. Once processing is complete, you can click the **Book icon** to open the Chapter Selector and immediately jump to the start of any chapter.
