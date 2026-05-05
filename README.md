@@ -9,7 +9,7 @@ A modern web application for speed reading PDFs, EPUBs, and Images using RSVP (R
 - **RSVP Speed Reading**: Read faster by eliminating eye movement.
 - **Format Support**: PDF, EPUB, TXT, DOCX, and **Images** (.png, .jpg, .webp).
 - **OCR Integration**: Automatically extracts text from scanned PDFs and images using Tesseract.
-- **Text-to-Speech (TTS)**: Generate and download an MP3 audio version of your document.
+- **Text-to-Speech (TTS)**: Generate and download an MP3/WAV audio version of your document.
 - **Manual Layout Editor**: Select specific text boxes to read on PDF files, skipping headers/footers.
 - **Modern UI**: Clean, glassmorphism-based design with Dark Mode support.
 - **Image Gallery**: View and download images extracted from your documents.
@@ -62,6 +62,8 @@ When you upload a PDF, you will be prompted to choose between Automatic Import o
 
 If you select **OK**, you will enter the Manual Layout Editor. This powerful tool allows you to visually select exactly what text to read, ensuring you skip headers, footers, page numbers, or irrelevant sidebars.
 
+*(Note: WebReader automatically saves your manual layout mappings! By default, if the application is hosted for multiple users, anyone accessing that same PDF later can instantly benefit from the layout boxes you have already configured.)*
+
 ![PDF Editor](assets/pdf_editor_full.png)
 
 **How to use the Manual Editor**:
@@ -106,9 +108,12 @@ The primary interface provides several ways to tailor WebReader to your cognitiv
 ### 4. Advanced Features
 - **Chapters (Book Icon)**: When reading an EPUB, click the book icon to navigate directly to specific chapters.
 - **Gallery (Image Icon)**: If your document contains illustrations or figures, click the image icon to view them in a dedicated gallery.
-- **Downloads**: 
-  - Click the **Document icon** to download a clean text transcript (`.txt`) of your file.
-  - Click the **Volume icon** to generate and download an MP3 audiobook using Text-to-Speech (TTS).
+- **Audio Export (TTS)**: 
+  - Click the **Headphones icon** in the top right control bar to generate a high-quality audiobook version of your document.
+  ![Audio Icons](assets/audio_icons.png)
+  - In the Audio Options modal, you can select the AI Voice you want to use and specify the exact page range (e.g., from Chapter 1 to Chapter 3). Click **Download WAV** to generate and save the audio file.
+  ![Audio Modal](assets/audio_modal.png)
+- **Text Transcript**: Click the **Document icon** to download a clean text transcript (`.txt`) of your file.
 
 ## Troubleshooting
 
