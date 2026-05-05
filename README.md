@@ -2,6 +2,8 @@
 
 A modern web application for speed reading PDFs, EPUBs, and Images using RSVP (Rapid Serial Visual Presentation) technology.
 
+![WebReader UI](assets/main_ui.png)
+
 ## Features
 
 - **RSVP Speed Reading**: Read faster by eliminating eye movement.
@@ -53,8 +55,22 @@ WebReader is designed to be intuitive and fast. Here is how to use the core feat
 ### 1. Uploading a Document
 - Click the **upload area** on the main screen to select a supported document (PDF, EPUB, TXT, DOCX, or Image).
 
-**PDF Manual Extraction & Marking "Page 1"**: 
-If you upload a PDF, you will be asked if you want to use the Manual Editor. This powerful tool allows you to visually draw boxes around the specific text columns or paragraphs you want to read, automatically skipping headers, footers, and page numbers. Additionally, if the actual content of your book starts on page 15, you can navigate to that page in the editor and click **"Start Here"** to effectively mark it as "Page 1" for your reading session.
+**PDF Manual Extraction**: 
+When you upload a PDF, you will be prompted to choose between Automatic Import or the Manual Editor:
+
+![PDF Prompt](assets/pdf_prompt.png)
+
+If you select **OK**, you will enter the Manual Layout Editor. This powerful tool allows you to visually select exactly what text to read, ensuring you skip headers, footers, page numbers, or irrelevant sidebars.
+
+![PDF Editor](assets/pdf_editor_full.png)
+
+**How to use the Manual Editor**:
+1. **Draw Boxes**: Simply click and drag your mouse over the text blocks you want to read. A blue box will appear around your selection.
+2. **Fit & Resize**: You can adjust the edges of your drawn boxes by clicking and dragging the black squares in the corners. If the page is too large or too small, toggle the **FIT / 1:1** button in the top toolbar to adjust the zoom level.
+![Drawing Boxes](assets/pdf_box_drawing.png)
+3. **Set Starting Page**: If the actual content of your book starts on a later page (e.g., page 15 after the table of contents and prefaces), navigate to that page using the arrows in the top left, and click **"Start Here"**. This marks the current page as the starting point for your reading session.
+![Start Here Button](assets/pdf_toolbar.png)
+4. **Finish**: Once you have highlighted the layout blocks on the starting page, click **DONE** in the top right. WebReader will automatically apply that layout structure to the subsequent pages and begin processing!
 
 **EPUB Chapter Selection**: 
 When uploading an EPUB, the application automatically extracts the table of contents. Once processing is complete, you can click the **Book icon** to open the Chapter Selector and immediately jump to the start of any chapter.
