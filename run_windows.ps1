@@ -118,7 +118,8 @@ Write-Host ""
 Start-Job -ScriptBlock { 
     param($p)
     Start-Sleep -Seconds 15
-    Start-Process "http://localhost:$p"
+    $timestamp = (Get-Date -UFormat "%s")
+    Start-Process "http://localhost:$p/?v=$timestamp"
 } -ArgumentList $port | Out-Null
 
 # Run Uvicorn from venv (Blocking)
