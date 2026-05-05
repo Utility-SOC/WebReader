@@ -1034,6 +1034,37 @@
                 try {
                     const res = await fetch("/upload", { method: "POST", body: formData });
                     const data = await res.json();
+
+                    if (data.task_id) {
+                        const poll = setInterval(async () => {
+                            try {
+                                const statusRes = await fetch(`/tasks/${data.task_id}`);
+                                const statusData = await statusRes.json();
+                                if (statusData.status === "completed" || statusData.status === "COMPLETED") {
+                                    clearInterval(poll);
+                                    const result = statusData.result || {};
+                                    setWords(result.words || []);
+                                    setImages(result.images || []);
+                                    setIndex(0);
+                                    setIsPlaying(false);
+                                    if (result.chapters && result.chapters.length > 0) {
+                                        setChapters(result.chapters);
+                                        setShowChapterSelector(true);
+                                    }
+                                    setManualBoxes(null);
+                                    setLoading(false);
+                                } else if (statusData.status === "failed" || statusData.status === "FAILED") {
+                                    clearInterval(poll);
+                                    alert("Processing failed: " + statusData.error);
+                                    setLoading(false);
+                                }
+                            } catch (e) {
+                                console.error(e);
+                            }
+                        }, 1000);
+                        return;
+                    }
+
                     setWords(data.words || []);
                     setImages([]);
                     setIndex(0);
@@ -1045,8 +1076,8 @@
                         setShowChapterSelector(true);
                     }
                     setManualBoxes(null); // Reset manual boxes on new upload without manual flow
-                } catch (err) { alert(err); }
-                finally { setLoading(false); }
+                    setLoading(false);
+                } catch (err) { alert(err); setLoading(false); }
             };
 
             const handleManualFinish = async (boxesMap, startPage = 1) => {

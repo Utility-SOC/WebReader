@@ -1,6 +1,6 @@
 from .database import SessionLocal
 from .models import Document, ProcessingTask, TaskStatus
-from .utils import extract_text_from_pdf_range, process_text, load_epub_manual, process_image_file
+from .utils import extract_text_from_pdf_range, process_text, load_epub_manual, load_mobi_manual, process_image_file
 import os
 from .celery_app import celery_app
 import logging
@@ -53,6 +53,8 @@ def process_document_core(task_id: str, document_id: int, manual_boxes: dict = N
             )
         elif file_type == "epub":
             extracted_text, chapters = load_epub_manual(path)
+        elif file_type == "mobi":
+            extracted_text, chapters = load_mobi_manual(path)
         elif file_type in ["jpg", "jpeg", "png", "webp", "image"]:
              extracted_text, extracted_images = process_image_file(path)
         elif file_type == "txt":
