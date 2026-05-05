@@ -1,0 +1,95 @@
+name: Automated Release
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - 'README.md'
+      - 'assets/**'
+      - '.gitignore'
+
+permissions:
+  contents: write
+
+jobs:
+  check_time:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+    steps:
+      - name: Check last release date
+        id: check
+        uses: actions/github-script@v6
+        with:
+          script: |
+            try {
+              const { data: releases } = await github.rest.repos.listReleases({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 1
+              });
+              if (releases.length === 0) {
+                core.setOutput('should_release', 'true');
+                return;
+              }
+              const lastReleaseDate = new Date(releases[0].published_at);
+              const now = new Date();
+              const diffMs = now - lastReleaseDate;
+              const diffDays = diffMs / (1000 * 60 * 60 * 24);
+              if (diffDays > 3) {
+                core.setOutput('should_release', 'true');
+              } else {
+                console.log(`Last release was ${diffDays.toFixed(2)} days ago. Skipping.`);
+                core.setOutput('should_release', 'false');
+              }
+            } catch (err) {
+              console.error(err);
+              core.setOutput('should_release', 'true'); // Fallback to release on error
+            }
+
+  release:
+    needs: check_time
+    if: needs.check_time.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        
+      - name: Create Version Tag
+        id: tag
+        run: |
+          VERSION=$(date +'%Y.%m.%d-%H%M')
+          echo "VERSION=v$VERSION" >> $GITHUB_ENV
+          
+      - name: Package Release
+        run: |
+          mkdir -p release_package
+          
+          # Copy necessary files and directories
+          cp -r backend release_package/ || true
+          cp -r frontend release_package/ || true
+          cp -r assets release_package/ || true
+          cp index.html release_package/ || true
+          cp README.md release_package/ || true
+          cp requirements.txt release_package/ || true
+          cp run_windows.ps1 release_package/ || true
+          cp run_windows.bat release_package/ || true
+          cp run_linux.sh release_package/ || true
+          cp update_linux.sh release_package/ || true
+          cp update_windows.bat release_package/ || true
+          
+          # Zip it up
+          cd release_package
+          zip -r ../WebReader-Portable.zip .
+          cd ..
+          
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: Release ${{ env.VERSION }}
+          draft: false
+          prerelease: false
+          files: |
+            WebReader-Portable.zip

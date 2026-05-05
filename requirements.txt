@@ -15,3 +15,5 @@ httpx
 sqlalchemy
 celery
 redis
+mobi
+edge-tts

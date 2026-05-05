@@ -143,7 +143,7 @@ const AudioModal = ({ filename, pageCount, manualBoxes, onCancel }) => {
                         {isDownloading ? (
                             <><span>Processing...</span></>
                         ) : (
-                            <><Download size={18} /> <span>Download WAV</span></>
+                            <><Download size={18} /> <span>Download MP3</span></>
                         )}
                     </button>
                 </div>

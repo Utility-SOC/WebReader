@@ -929,7 +929,7 @@
                                 {isDownloading ? (
                                     <><span>Processing...</span></>
                                 ) : (
-                                    <><span>Download WAV</span></>
+                                    <><span>Download MP3</span></>
                                 )}
                             </button>
                         </div>
@@ -1309,7 +1309,7 @@
                                 <div className="p-3 bg-gray-900/30 rounded border border-gray-600">
                                     <label className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1 block">Load Document</label>
                                     <div className="flex flex-col gap-2">
-                                        <input type="file" onChange={handleUpload} className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer" accept=".pdf,.txt,.docx,.epub" />
+                                        <input type="file" onChange={handleUpload} className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer" accept=".pdf,.txt,.docx,.epub,.mobi,.azw3" />
                                         <div className="flex gap-2">
                                             <input type="text" placeholder="Or paste URL..." onKeyDown={e => {
                                                 if (e.key === 'Enter') {

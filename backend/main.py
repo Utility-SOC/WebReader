@@ -20,6 +20,7 @@ from .utils import (
     extract_text_from_pdf_range, 
     process_text, 
     load_epub_manual, 
+    load_mobi_manual,
     extract_text_with_ocr, 
     TESSERACT_CMD
 )
@@ -151,6 +152,8 @@ async def upload_temp(file: UploadFile = File(...)):
                 info["saved_boxes"] = saved
         elif safe_name.lower().endswith(".epub"):
             info["type"] = "epub"
+        elif safe_name.lower().endswith((".mobi", ".azw3")):
+            info["type"] = "mobi"
         elif any(safe_name.lower().endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".webp"]):
              info["type"] = "image"
                 
@@ -262,6 +265,8 @@ async def fetch_url(item: Dict[str, str] = Body(...)):
             ext = ".pdf"
         elif ".epub" in lower_name or "application/epub" in content_type:
             ext = ".epub"
+        elif ".mobi" in lower_name or ".azw3" in lower_name or "application/x-mobipocket-ebook" in content_type:
+            ext = ".mobi"
         elif ".docx" in lower_name or "wordprocessing" in content_type:
             ext = ".docx"
         elif any(x in lower_name or x in content_type for x in ["image", ".png", ".jpg", ".jpeg", ".webp"]):
@@ -301,6 +306,12 @@ async def fetch_url(item: Dict[str, str] = Body(...)):
              info["chapters"] = chapters
              info["words"] = process_text(text)
              info["word_count"] = len(info["words"])
+        elif filename.lower().endswith((".mobi", ".azw3")):
+             info["type"] = "mobi"
+             text, chapters = load_mobi_manual(path)
+             info["chapters"] = chapters
+             info["words"] = process_text(text)
+             info["word_count"] = len(info["words"])
         elif filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
              info["type"] = "image"
                 
@@ -331,6 +342,7 @@ async def upload_document(
         lower_name = safe_name.lower()
         if lower_name.endswith(".pdf"): file_type = "pdf"
         elif lower_name.endswith(".epub"): file_type = "epub"
+        elif lower_name.endswith((".mobi", ".azw3")): file_type = "mobi"
         elif lower_name.endswith(".txt"): file_type = "txt"
         elif lower_name.endswith((".png", ".jpg", ".jpeg", ".webp")): file_type = "image"
         
@@ -414,6 +426,8 @@ async def legacy_upload(file: UploadFile = File(...), force_ocr: bool = False):
             text, _ = extract_text_from_pdf_range(tpath, 1, force_ocr=force_ocr)
         elif filename.endswith(".epub"):
             text, chapters = load_epub_manual(tpath)
+        elif filename.endswith((".mobi", ".azw3")):
+            text, chapters = load_mobi_manual(tpath)
         elif filename.endswith(".txt"):
             text = content.decode("utf-8", errors="ignore")
         # ... other types omitted for brevity in legacy
@@ -514,7 +528,7 @@ def generate_tts(
     if not text:
         raise HTTPException(400, "Text is required")
         
-    output_filename = f"tts_{uuid.uuid4()}.wav"
+    output_filename = f"tts_{uuid.uuid4()}.mp3"
     output_path = os.path.join(TEMP_DIR, output_filename)
     
     try:
@@ -535,7 +549,7 @@ def generate_tts(
         except:
              pass
              
-        return Response(content=audio_data, media_type="audio/wav")
+        return Response(content=audio_data, media_type="audio/mpeg")
         
     except Exception as e:
         logger.error(f"TTS Generation failed: {e}")
@@ -594,7 +608,7 @@ def download_tts(
             raise HTTPException(400, "No text extracted from the specified range.")
             
         # Generate Audio
-        output_filename = f"tts_download_{uuid.uuid4()}.wav"
+        output_filename = f"tts_download_{uuid.uuid4()}.mp3"
         output_path = os.path.join(TEMP_DIR, output_filename)
         
         generate_tts_cli(text, output_path, voice_id)
@@ -606,8 +620,8 @@ def download_tts(
         from fastapi.responses import FileResponse
         return FileResponse(
             output_path, 
-            media_type="audio/wav", 
-            filename=f"{filename}_pg{start_page}-{end_page or 'end'}.wav",
+            media_type="audio/mpeg", 
+            filename=f"{filename}_pg{start_page}-{end_page or 'end'}.mp3",
             background=None # We could add a background task to delete it, but temp cleanup is separate
         )
         

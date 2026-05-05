@@ -290,6 +290,8 @@ def load_epub_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
             chapters = []
             import re
             
+            current_word_count = 0
+            
             for index, item in enumerate(reading_order):
                 full_path = f"{base_dir}/{item}" if base_dir else item
                 full_path = full_path.replace("\\", "/")
@@ -304,17 +306,55 @@ def load_epub_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
                     if not chapter_text.strip(): continue
 
                     words_in_chapter = len(re.findall(r'\S+', chapter_text))
-                    current_word_count = len(re.findall(r'\S+', all_text))
+                    
                     chapters.append({
                         "title": f"Section {index + 1}",
                         "start_index": current_word_count,
                         "word_count": words_in_chapter
                     })
+                    current_word_count += words_in_chapter
                     all_text += chapter_text
                     
             return all_text, chapters
     except Exception as e:
         logger.error(f"EPUB Error: {e}")
+        return "", []
+
+def load_mobi_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Extract MOBI/AZW3 files using mobi and process the resulting EPUB or HTML.
+    """
+    import mobi
+    try:
+        tempdir, extracted_path = mobi.extract(path)
+        try:
+            if extracted_path.endswith(".epub"):
+                return load_epub_manual(extracted_path)
+            elif extracted_path.endswith(".html"):
+                with open(extracted_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    html = f.read()
+                from bs4 import BeautifulSoup
+                import re
+                soup = BeautifulSoup(html, "html.parser")
+                for tag in soup(["script", "style"]): tag.decompose()
+                
+                text = soup.get_text(separator=' ', strip=True) + "\n\n"
+                words_in_chapter = len(re.findall(r'\S+', text))
+                
+                chapters = [{
+                    "title": "MOBI Content",
+                    "start_index": 0,
+                    "word_count": words_in_chapter
+                }]
+                return text, chapters
+            else:
+                logger.warning(f"MOBI extracted to unsupported format: {extracted_path}")
+                return "", []
+        finally:
+            import shutil
+            shutil.rmtree(tempdir, ignore_errors=True)
+    except Exception as e:
+        logger.error(f"MOBI Error: {e}")
         return "", []
 
 def process_image_file(path: str) -> Tuple[str, List[Dict[str, Any]]]:
