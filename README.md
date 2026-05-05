@@ -2,8 +2,6 @@
 
 A modern web application for speed reading PDFs, EPUBs, and Images using RSVP (Rapid Serial Visual Presentation) technology.
 
-![WebReader UI](https://via.placeholder.com/800x450.png?text=WebReader+Preview)
-
 ## Features
 
 - **RSVP Speed Reading**: Read faster by eliminating eye movement.
@@ -11,7 +9,7 @@ A modern web application for speed reading PDFs, EPUBs, and Images using RSVP (R
 - **OCR Integration**: Automatically extracts text from scanned PDFs and images using Tesseract.
 - **Text-to-Speech (TTS)**: Generate and download an MP3 audio version of your document.
 - **Manual Layout Editor**: Select specific text boxes to read on PDF files, skipping headers/footers.
-- **Premium UI**: Modern, glassmorphism-based design with Dark Mode support.
+- **Modern UI**: Clean, glassmorphism-based design with Dark Mode support.
 - **Image Gallery**: View and download images extracted from your documents.
 
 ## Installation
@@ -54,7 +52,12 @@ WebReader is designed to be intuitive and fast. Here is how to use the core feat
 
 ### 1. Uploading a Document
 - Click the **upload area** on the main screen to select a supported document (PDF, EPUB, TXT, DOCX, or Image).
-- **PDF Manual Extraction**: If you upload a PDF, you'll be asked if you want to use the Manual Editor. This allows you to draw boxes around the text you want to read, automatically skipping headers, footers, and page numbers.
+
+**PDF Manual Extraction & Marking "Page 1"**: 
+If you upload a PDF, you will be asked if you want to use the Manual Editor. This powerful tool allows you to visually draw boxes around the specific text columns or paragraphs you want to read, automatically skipping headers, footers, and page numbers. Additionally, if the actual content of your book starts on page 15, you can navigate to that page in the editor and click **"Start Here"** to effectively mark it as "Page 1" for your reading session.
+
+**EPUB Chapter Selection**: 
+When uploading an EPUB, the application automatically extracts the table of contents. Once processing is complete, you can click the **Book icon** to open the Chapter Selector and immediately jump to the start of any chapter.
 
 ### 2. Reading with RSVP
 - **Play/Pause**: Once processing is complete, press the large **Play** button (or click anywhere in the reading area) to start Rapid Serial Visual Presentation.
