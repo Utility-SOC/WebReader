@@ -88,10 +88,20 @@ When uploading an EPUB, the application automatically extracts the table of cont
 - **Progress Bar**: Drag the scrubber at the bottom to jump to any point in the text.
 
 ### 3. Customizing the Experience
-- Click the **Gear icon** in the top right to open **Settings**.
-- **Speed**: Adjust your target Words Per Minute (WPM) and the number of words shown at once (Chunk Size).
-- **Appearance**: Change fonts, text size, and the width of the reading area.
-- **Dynamic Punctuation**: WebReader slows down slightly at commas, periods, and paragraphs. You can tweak these delays in the settings.
+The primary interface provides several ways to tailor WebReader to your cognitive preferences.
+
+![Reading Interface & Presets](assets/settings_presets.png)
+
+- **Reading Presets**: We offer curated presets like Standard RSVP, ORP Alignment, Cognitive Chunking, and Typographic Guidance based on cognitive science research to get you started quickly.
+- **Font Selection**: Click the **Gear icon** in the top right to open **Settings**, where you can select fonts tailored for reading efficiency, including Atkinson Hyperlegible (for low vision) and OpenDyslexic.
+![Font Options](assets/settings_fonts.png)
+- **Speed & Chunk Size**: Adjust your target Words Per Minute (WPM). You can also increase the **Chunk Size** (e.g., up to 6) to read a larger section of text at once, which is helpful for "Cognitive Chunking" of phrases.
+![Speed and Chunking](assets/settings_mechanics.png)
+- **Advanced Mechanics**: Click the Gear icon to access advanced visual features:
+  - **ORP Pivot**: The Optimal Recognition Point (ORP) is the colored letter in the center of the display. Highlighting this pivot point minimizes the distance your eyes need to dart left and right. You can manually adjust this pivot position.
+  - **Bionic Bolding**: Enabling this feature bolds the first few letters of every word, artificially guiding your eyes to the most critical parts of the word for faster comprehension.
+![Advanced Settings](assets/settings_advanced.png)
+- **Dynamic Punctuation**: Adjust delay multipliers for commas, periods, and paragraphs so the reading pace feels natural.
 
 ### 4. Advanced Features
 - **Chapters (Book Icon)**: When reading an EPUB, click the book icon to navigate directly to specific chapters.
