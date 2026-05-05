@@ -19,6 +19,7 @@ celery_app.conf.update(
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
-    # Windows specific (optional, but good for local dev if we were to run it)
-    # worker_pool = 'solo' if os.name == 'nt' else 'prefork'
+    # Windows specific: Bypass Redis/Worker requirement locally since run_windows.ps1 doesn't run them
+    task_always_eager=True if os.name == 'nt' else False,
+    task_eager_propagates=True if os.name == 'nt' else False,
 )

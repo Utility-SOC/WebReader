@@ -29,3 +29,9 @@ layouts/
 # System
 .DS_Store
 Thumbs.db
+
+# Testing
+.pytest_cache/
+
+# Backend Data
+backend/data/

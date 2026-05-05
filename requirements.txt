@@ -12,3 +12,6 @@ pyttsx3
 pypiwin32
 pytest
 httpx
+sqlalchemy
+celery
+redis

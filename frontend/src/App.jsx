@@ -5,8 +5,9 @@ import PdfManualEditor from './components/PdfManualEditor';
 // ContextView import removed/unused in this cleanup to focus on core features, or can be re-added if essential
 import ImageGallery from './components/ImageGallery';
 import ChapterSelector from './components/ChapterSelector';
+import AudioModal from './components/AudioModal';
 import SettingsModal from './components/SettingsModal';
-import { Settings, Play, Pause, RotateCcw, Image, BookOpen, Volume2, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X } from 'lucide-react';
+import { Settings, Play, Pause, RotateCcw, Image, BookOpen, Volume2, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
 import { PRESETS } from './constants';
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [taskId, setTaskId] = useState(null);
   const [statusMessage, setStatusMessage] = useState("");
+  const [currentFile, setCurrentFile] = useState(null); // Track filename
 
   // Settings
   const [settings, setSettings] = useState(PRESETS.orp_focused.config);
@@ -37,7 +39,8 @@ function App() {
   const [chapters, setChapters] = useState([]);
   const [showChapterSelector, setShowChapterSelector] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [showGallery, setShowGallery] = useState(false); // Renamed from showAudioModal
+  const [showGallery, setShowGallery] = useState(false);
+  const [showAudioModal, setShowAudioModal] = useState(false);
   const [manualBoxes, setManualBoxes] = useState(null);
 
   // Dynamic Punctuation State
@@ -56,6 +59,8 @@ function App() {
     const selected = e.target.files[0];
     if (!selected) return;
 
+    setCurrentFile(selected.name);
+
     // Reset previous state
     setWords([]);
     setImages([]);
@@ -71,7 +76,10 @@ function App() {
         formData.append("file", selected);
         try {
           const res = await fetch("/upload_temp", { method: "POST", body: formData });
-          if (!res.ok) throw new Error("Upload Failed");
+          if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Upload Failed (${res.status}): ${errText}`);
+          }
           const data = await res.json();
           setTempFile(data);
           setManualBoxes(data.saved_boxes || {});
@@ -142,10 +150,8 @@ function App() {
     setShowEditor(false);
     setLoading(true);
     setStatusMessage("Processing with Manual Layout...");
+    setManualBoxes(boxesMap); // Store for TTS usage later!
     try {
-      // For manual, we can still use the new background flow if we adapted it, 
-      // but strictly existing logic calls /process_pdf (sync) or needs update.
-      // Keeping sync for manual editor for now as it returns immediate result in original code.
       const res = await fetch("/process_pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -163,6 +169,20 @@ function App() {
       setIndex(0);
     } catch (err) { alert(err.message); }
     finally { setLoading(false); setStatusMessage(""); }
+  };
+
+  // Download Transcript
+  const downloadTranscript = () => {
+    if (words.length === 0) return;
+    const text = words.join(" ");
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (currentFile ? currentFile + ".txt" : "transcript.txt");
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // Loop
@@ -191,7 +211,7 @@ function App() {
     return <PdfManualEditor
       filename={tempFile.filename}
       pageCount={tempFile.page_count}
-      boxes={manualBoxes}
+      initialBoxes={manualBoxes}
       onFinish={handleManualFinish}
       onCancel={() => { setShowEditor(false); setTempFile(null); setManualBoxes(null); }}
     />;
@@ -330,6 +350,16 @@ function App() {
                         </div>
                       </button>
                     )}
+
+                    {/* DOWNLOADS */}
+                    <div className="flex gap-1 ml-2 pl-2 border-l border-white/10">
+                      <button onClick={downloadTranscript} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Download Transcript">
+                        <FileText size={20} />
+                      </button>
+                      <button onClick={() => setShowAudioModal(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Download Audio (TTS)">
+                        <Volume2 size={20} />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Center Playback */}
@@ -386,6 +416,13 @@ function App() {
         images={images}
         onClose={() => setShowGallery(false)}
         isDark={isDark}
+      />}
+
+      {showAudioModal && <AudioModal
+        filename={tempFile?.filename || currentFile} // Pass current filename
+        pageCount={tempFile?.page_count || 100}
+        manualBoxes={manualBoxes}
+        onCancel={() => setShowAudioModal(false)}
       />}
 
     </div>

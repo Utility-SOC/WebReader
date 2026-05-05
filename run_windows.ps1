@@ -29,19 +29,21 @@ if (-not (Test-Path "Scripts")) {
     python -m venv .
 }
 
-# 3. Dependencies
-# Use pip from local Scripts folder
-$pipPath = ".\Scripts\pip.exe"
-if (-not (Test-Path $pipPath)) {
-    Write-Host "[ERROR] pip not found in Scripts folder. Venv creation might have failed." -ForegroundColor Red
+# Activate Virtual Environment
+if (Test-Path ".\Scripts\Activate.ps1") {
+    Write-Host "[INFO] Activating Virtual Environment..." -ForegroundColor Cyan
+    . .\Scripts\Activate.ps1
+} else {
+    Write-Host "[ERROR] Activate.ps1 not found. Venv creation might have failed." -ForegroundColor Red
     exit 1
 }
 
+# 3. Dependencies
 Write-Host "[INFO] Checking dependencies..." -ForegroundColor Gray
-& $pipPath install -r requirements.txt | Out-Null
+python -m pip install -r requirements.txt | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[INFO] Installing dependencies (first run)..." -ForegroundColor Cyan
-    & $pipPath install -r requirements.txt
+    python -m pip install -r requirements.txt
 }
 
 # 4. Check/Install Tesseract
@@ -120,6 +122,5 @@ Start-Job -ScriptBlock {
 } -ArgumentList $port | Out-Null
 
 # Run Uvicorn from venv (Blocking)
-$uvicornPath = ".\Scripts\uvicorn.exe"
 # Updated for backend isolation refactor
-& $uvicornPath backend.main:app --reload --host 0.0.0.0 --port $port
+python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port $port
