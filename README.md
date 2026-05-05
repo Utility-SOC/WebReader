@@ -1,6 +1,6 @@
 # WebReader - Scientific Speed Reader
 
-A modern, containerized web application for speed reading PDFs, EPUBs, and Images using RSVP (Rapid Serial Visual Presentation) technology.
+A modern web application for speed reading PDFs, EPUBs, and Images using RSVP (Rapid Serial Visual Presentation) technology.
 
 ![WebReader UI](https://via.placeholder.com/800x450.png?text=WebReader+Preview)
 
@@ -25,8 +25,7 @@ A modern, containerized web application for speed reading PDFs, EPUBs, and Image
 
 ### Prerequisites
 
-- **Docker & Docker Compose** (Recommended)
-- *OR* Python 3.9+, Node.js, Redis, and Tesseract OCR (for local dev)
+- Python 3.9+, Node.js, Redis, and Tesseract OCR
 
 ### 1. Clone the Repository
 
@@ -38,24 +37,6 @@ git pull origin testing
 ```
 
 ## Running the Application
-
-### Option A: Docker (Recommended)
-
-This is the easiest way to run the full stack (Frontend, Backend, Worker, Redis).
-
-1.  **Build and Start**:
-    ```bash
-    docker-compose up --build
-    ```
-    *Add `-d` to run in detached mode.*
-
-2.  **Access**:
-    - **App**: [http://localhost:5173](http://localhost:5173)
-    - **API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
-
-### Option B: Local Development
-
-If you prefer running services manually:
 
 1.  **Start Redis**:
     Ensure a Redis server is running on `localhost:6379`.
@@ -93,8 +74,7 @@ If you prefer running services manually:
 ## Troubleshooting
 
 - **Upload Stuck?**: Ensure the `worker` container/process is running. The API delegates processing to Celery.
-- **OCR Failed?**: Ensure `tesseract` is installed and in your system PATH (or configured in `backend/utils.py`). Docker image handles this automatically.
-- **Permissions**: If running via Docker on Linux, ensure `./temp_uploads` and `./data` are writable.
+- **OCR Failed?**: Ensure `tesseract` is installed and in your system PATH (or configured in `backend/utils.py`).
 
 ## License
 
