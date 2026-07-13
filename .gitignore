@@ -1,41 +1,53 @@
 # Python
 __pycache__/
 *.pyc
+*.egg-info/
 .env
 
-# Root Virtual Environment Folders
-Scripts/
-Lib/
-Include/
-bin/
-lib/
-share/
-pyvenv.cfg
+# Root virtual environment (created by run scripts as `python -m venv .`)
+# Anchored to root so future source dirs named lib/bin/etc. aren't ignored
+/Scripts/
+/Lib/
+/Include/
+/bin/
+/lib/
+/share/
+/pyvenv.cfg
 .Python
-
-# Old venv style (just in case)
 venv/
 .venv/
 
-# Temp Data
+# User data / temp
 temp_uploads/
 layouts/
+/data/
+backend/data/
+*.db
 *.pdf
 *.log
+build_log.txt
 
-# Audio
+# Audio exports
 *.wav
+*.mp3
 
-# System
-.DS_Store
-Thumbs.db
+# Desktop build artifacts (PyInstaller / release packaging)
+/build/
+/dist/
+/tesseract_bundle/
+/desktop_release/
+WebReader-*.zip
+
+# License texts fetched at build time (committed ones are kept)
+THIRD_PARTY_LICENSES/leptonica-license.txt
+THIRD_PARTY_LICENSES/tesseract-dist-*
 
 # Testing
 .pytest_cache/
+.coverage
 
-# Backend Data
-backend/data/
-
-# Build artifacts / local databases
-build_log.txt
-*.db
+# System / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
