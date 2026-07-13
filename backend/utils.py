@@ -1,5 +1,6 @@
 import io
 import os
+import sys
 import shutil
 import base64
 import logging
@@ -8,12 +9,23 @@ import re
 import xml.etree.ElementTree as ET
 from typing import List, Optional, Dict, Any, Tuple
 import requests
-import winreg
+
+# winreg only exists on Windows; guard so Linux/Docker workers can import this module
+if sys.platform == "win32":
+    import winreg
+else:
+    winreg = None
+
 from PIL import Image
 import pdfplumber
 import docx
 import pytesseract
 from pytesseract import Output
+
+try:
+    from .pdf_auto import build_repeated_lines, extract_page_smart
+except ImportError:  # allow running outside package context (celery worker in /app)
+    from pdf_auto import build_repeated_lines, extract_page_smart
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -43,8 +55,8 @@ if not TESSERACT_CMD:
                 os.environ["PATH"] += os.pathsep + os.path.dirname(p)
                 break
 
-    if not TESSERACT_CMD:
-        # Check Registry (HKLM/HKCU)
+    if not TESSERACT_CMD and winreg is not None:
+        # Check Registry (HKLM/HKCU) - Windows only
         try:
             search_terms = ["tesseract-ocr", "tesseract"]
             roots = [
@@ -142,23 +154,33 @@ def extract_text_from_pdf_range(
     if manual_boxes is None:
         manual_boxes = {}
         
+    repeated_lines = None  # lazily computed header/footer fingerprints (automatic mode)
+
     try:
         with pdfplumber.open(path) as pdf:
             total_pages = len(pdf.pages)
             if end_page is None or end_page > total_pages:
                 end_page = total_pages
-                
+
             for i in range(start_page - 1, end_page):
                 page = pdf.pages[i]
-                
+
                 boxes = manual_boxes.get(str(i)) # keys are strings in JSON
-                
+
                 if not boxes:
-                    # AUTOMATIC MODE
+                    # AUTOMATIC MODE (smart: columns, header/footer & page-number removal)
                     txt = ""
                     if not force_ocr:
-                        txt = page.extract_text(layout=True, x_tolerance=1)
-                    
+                        try:
+                            if repeated_lines is None:
+                                repeated_lines = build_repeated_lines(pdf)
+                            txt = extract_page_smart(page, repeated_lines)
+                        except Exception as smart_e:
+                            logger.warning(f"Smart extraction failed on page {i+1}, falling back: {smart_e}")
+                            txt = ""
+                        if not txt or not txt.strip():
+                            txt = page.extract_text(layout=True, x_tolerance=1)
+
                     if txt and txt.strip():
                         extracted_text += txt + "\n"
                     else:
@@ -360,7 +382,7 @@ def load_mobi_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
 def process_image_file(path: str) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Process a single image file (PNG, JPG, WEBP) and return OCR text.
-    Returns (text, []) - no extracted images list needed for a single image usually, 
+    Returns (text, []) - no extracted images list needed for a single image usually,
     but we could return the image itself as an 'extracted image' if desired.
     """
     try:

@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 # Internal imports
-# Internal imports
 from .database import engine, get_db, Base
 from .models import Document, ProcessingTask, TaskStatus
 from .utils import (
@@ -40,8 +39,6 @@ from PIL import Image
 
 app = FastAPI()
 
-app = FastAPI()
-
 # Allow CORS
 app.add_middleware(
     CORSMiddleware,
@@ -65,6 +62,12 @@ else:
     ROOT_DIR = os.path.dirname(BASE_DIR)
     TEMP_DIR = os.path.join(ROOT_DIR, "temp_uploads")
     LAYOUTS_DIR = os.path.join(ROOT_DIR, "layouts")
+
+# Desktop app override: keep all writable data in a user directory
+_DATA_ROOT = os.getenv("WEBREADER_DATA_DIR")
+if _DATA_ROOT:
+    TEMP_DIR = os.path.join(_DATA_ROOT, "temp_uploads")
+    LAYOUTS_DIR = os.path.join(_DATA_ROOT, "layouts")
 
 os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(LAYOUTS_DIR, exist_ok=True)
@@ -337,7 +340,6 @@ async def upload_document(
         with open(path, "wb") as f:
             f.write(await file.read())
             
-        file_type = "unknown"
         file_type = "unknown"
         lower_name = safe_name.lower()
         if lower_name.endswith(".pdf"): file_type = "pdf"

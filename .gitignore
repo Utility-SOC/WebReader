@@ -35,3 +35,7 @@ Thumbs.db
 
 # Backend Data
 backend/data/
+
+# Build artifacts / local databases
+build_log.txt
+*.db

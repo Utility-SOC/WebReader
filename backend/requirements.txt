@@ -12,3 +12,4 @@ sqlalchemy
 celery
 redis
 edge-tts
+mobi

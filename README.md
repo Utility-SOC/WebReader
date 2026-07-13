@@ -7,6 +7,7 @@ A modern web application for speed reading PDFs, EPUBs, and Images using RSVP (R
 ## Features
 
 - **RSVP Speed Reading**: Read faster by eliminating eye movement.
+- **Smart Automatic PDF Import**: Detects multi-column layouts (correct reading order), strips repeated headers/footers and standalone page numbers, and repairs words hyphenated across line breaks.
 - **Format Support**: PDF, EPUB, TXT, DOCX, and **Images** (.png, .jpg, .webp).
 - **OCR Integration**: Automatically extracts text from scanned PDFs and images using Tesseract.
 - **Text-to-Speech (TTS)**: Generate and download an MP3/WAV audio version of your document.
@@ -60,7 +61,9 @@ When you upload a PDF, you will be prompted to choose between Automatic Import o
 
 ![PDF Prompt](assets/pdf_prompt.png)
 
-If you select **OK**, you will enter the Manual Layout Editor. This powerful tool allows you to visually select exactly what text to read, ensuring you skip headers, footers, page numbers, or irrelevant sidebars.
+**Automatic Import** now handles most documents well on its own: it detects multi-column layouts and reads them in the correct order, and automatically removes repeated headers, footers, and page numbers.
+
+If you select **OK**, you will enter the Manual Layout Editor. This powerful tool allows you to visually select exactly what text to read, ensuring you skip headers, footers, page numbers, or irrelevant sidebars — useful for unusual layouts the automatic mode can't handle.
 
 *(Note: WebReader automatically saves your manual layout mappings! By default, if the application is hosted for multiple users, anyone accessing that same PDF later can instantly benefit from the layout boxes you have already configured.)*
 

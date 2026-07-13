@@ -8,6 +8,7 @@ on:
       - 'README.md'
       - 'assets/**'
       - '.gitignore'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,6 +24,10 @@ jobs:
         uses: actions/github-script@v6
         with:
           script: |
+            if (context.eventName === 'workflow_dispatch') {
+              core.setOutput('should_release', 'true');
+              return;
+            }
             try {
               const { data: releases } = await github.rest.repos.listReleases({
                 owner: context.repo.owner,
@@ -48,29 +53,99 @@ jobs:
               core.setOutput('should_release', 'true'); // Fallback to release on error
             }
 
-  release:
+  build_desktop:
     needs: check_time
+    if: needs.check_time.outputs.should_release == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pywebview pyinstaller
+
+      - name: Install Tesseract OCR (for bundling)
+        run: choco install tesseract --no-progress -y
+
+      - name: Prepare Tesseract bundle and license notices
+        shell: pwsh
+        run: |
+          $tess = "C:\Program Files\Tesseract-OCR"
+          Copy-Item $tess tesseract_bundle -Recurse
+          # License texts required for redistribution (Apache 2.0 / Leptonica)
+          curl.exe -sL -o THIRD_PARTY_LICENSES/tesseract-LICENSE.txt https://raw.githubusercontent.com/tesseract-ocr/tesseract/main/LICENSE
+          curl.exe -sL -o THIRD_PARTY_LICENSES/leptonica-license.txt https://raw.githubusercontent.com/DanBloomberg/leptonica/master/leptonica-license.txt
+          # Copy any license/notice files shipped with the Tesseract install
+          Get-ChildItem $tess -Recurse -Include "*LICENSE*","*license*","*COPYING*" -File -ErrorAction SilentlyContinue |
+            ForEach-Object { Copy-Item $_.FullName ("THIRD_PARTY_LICENSES/tesseract-dist-" + $_.Name) -Force }
+
+      - name: Build desktop executable
+        run: pyinstaller webreader.spec
+
+      - name: Package desktop zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory desktop_release | Out-Null
+          Copy-Item dist/WebReader.exe desktop_release/
+          Copy-Item THIRD_PARTY_LICENSES desktop_release/THIRD_PARTY_LICENSES -Recurse
+          Set-Content desktop_release/README.txt @"
+          WebReader Desktop (Windows)
+          ===========================
+          Double-click WebReader.exe to start. No installation needed.
+          Your documents and settings are stored in %LOCALAPPDATA%\WebReader.
+
+          OCR is powered by bundled Tesseract OCR (Apache License 2.0).
+          See the THIRD_PARTY_LICENSES folder for license texts.
+
+          Note: Windows SmartScreen may warn about an unsigned app the first
+          time; choose 'More info' -> 'Run anyway'.
+          "@
+          Compress-Archive -Path desktop_release/* -DestinationPath WebReader-Desktop-Windows.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: WebReader-Desktop-Windows.zip
+
+  release:
+    needs: [check_time, build_desktop]
     if: needs.check_time.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
-        
+
       - name: Create Version Tag
         id: tag
         run: |
           VERSION=$(date +'%Y.%m.%d-%H%M')
           echo "VERSION=v$VERSION" >> $GITHUB_ENV
-          
-      - name: Package Release
+
+      - name: Download desktop build
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-windows
+
+      - name: Package Source Release
         run: |
           mkdir -p release_package
-          
-          # Copy necessary files and directories
+
           cp -r backend release_package/ || true
           cp -r frontend release_package/ || true
           cp -r assets release_package/ || true
           cp index.html release_package/ || true
+          cp desktop.py release_package/ || true
+          cp webreader.spec release_package/ || true
+          cp -r THIRD_PARTY_LICENSES release_package/ || true
           cp README.md release_package/ || true
           cp requirements.txt release_package/ || true
           cp run_windows.ps1 release_package/ || true
@@ -78,12 +153,11 @@ jobs:
           cp run_linux.sh release_package/ || true
           cp update_linux.sh release_package/ || true
           cp update_windows.bat release_package/ || true
-          
-          # Zip it up
+
           cd release_package
           zip -r ../WebReader-Portable.zip .
           cd ..
-          
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -93,3 +167,4 @@ jobs:
           prerelease: false
           files: |
             WebReader-Portable.zip
+            WebReader-Desktop-Windows.zip

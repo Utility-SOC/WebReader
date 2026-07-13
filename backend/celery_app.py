@@ -12,6 +12,10 @@ celery_app = Celery(
     include=['backend.tasks']
 )
 
+# Embedded/desktop mode (WEBREADER_EMBEDDED=1) runs tasks in-process with no
+# Redis/worker required. Windows local runs keep the same behaviour by default.
+_EMBEDDED = os.getenv("WEBREADER_EMBEDDED") == "1" or os.name == 'nt'
+
 celery_app.conf.update(
     result_expires=86400, # 24 hours
     task_serializer='json',
@@ -19,7 +23,6 @@ celery_app.conf.update(
     result_serializer='json',
     timezone='UTC',
     enable_utc=True,
-    # Windows specific: Bypass Redis/Worker requirement locally since run_windows.ps1 doesn't run them
-    task_always_eager=True if os.name == 'nt' else False,
-    task_eager_propagates=True if os.name == 'nt' else False,
+    task_always_eager=_EMBEDDED,
+    task_eager_propagates=_EMBEDDED,
 )
