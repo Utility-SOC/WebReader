@@ -125,4 +125,9 @@ The primary interface provides several ways to tailor WebReader to your cognitiv
 
 ## License
 
-MIT
+WebReader is MIT licensed (see `LICENSE`).
+
+The desktop build bundles [Tesseract OCR](https://github.com/tesseract-ocr/tesseract)
+(Apache License 2.0) and its Leptonica dependency for built-in OCR. License
+texts and attribution ship in the `THIRD_PARTY_LICENSES` folder included with
+every desktop release.

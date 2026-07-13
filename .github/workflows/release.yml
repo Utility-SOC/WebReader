@@ -80,9 +80,9 @@ jobs:
         run: |
           $tess = "C:\Program Files\Tesseract-OCR"
           Copy-Item $tess tesseract_bundle -Recurse
-          # License texts required for redistribution (Apache 2.0 / Leptonica)
-          curl.exe -sL -o THIRD_PARTY_LICENSES/tesseract-LICENSE.txt https://raw.githubusercontent.com/tesseract-ocr/tesseract/main/LICENSE
-          curl.exe -sL -o THIRD_PARTY_LICENSES/leptonica-license.txt https://raw.githubusercontent.com/DanBloomberg/leptonica/master/leptonica-license.txt
+          # Apache 2.0 text for Tesseract is committed in THIRD_PARTY_LICENSES/.
+          # Fetch the Leptonica license text at build time:
+          curl.exe -fsSL -o THIRD_PARTY_LICENSES/leptonica-license.txt https://raw.githubusercontent.com/DanBloomberg/leptonica/master/leptonica-license.txt
           # Copy any license/notice files shipped with the Tesseract install
           Get-ChildItem $tess -Recurse -Include "*LICENSE*","*license*","*COPYING*" -File -ErrorAction SilentlyContinue |
             ForEach-Object { Copy-Item $_.FullName ("THIRD_PARTY_LICENSES/tesseract-dist-" + $_.Name) -Force }
