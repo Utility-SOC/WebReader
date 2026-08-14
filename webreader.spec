@@ -16,6 +16,9 @@ hiddenimports = [
     "backend.main",
     "backend.tasks",
     "backend.celery_app",
+    "sqlalchemy",
+    "sqlalchemy.ext.declarative",
+    "sqlalchemy.orm",
     # uvicorn loads these dynamically
     "uvicorn.logging",
     "uvicorn.loops",

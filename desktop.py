@@ -14,6 +14,15 @@ import threading
 import time
 import urllib.request
 
+# PyInstaller's windowed build (console=False) gives the process no
+# console, so sys.stdout/stderr are None. Libraries that assume a real
+# stream (uvicorn's logging setup calls sys.stderr.isatty()) crash with
+# AttributeError on None. Give them a no-op stream instead.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
 
 def _base_dir() -> str:
     """Bundle dir when frozen by PyInstaller, source dir otherwise."""
