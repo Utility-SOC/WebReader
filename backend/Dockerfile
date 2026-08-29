@@ -13,14 +13,14 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY backend/requirements.txt backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
-# Copy source code
-COPY . .
+# Copy source code (kept as the `backend` package so its relative imports resolve)
+COPY backend/ backend/
 
 # Expose port
 EXPOSE 8000
 
 # Start command (overridden by compose usually, but good default)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

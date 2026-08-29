@@ -1,12 +1,12 @@
-version: '3.8'
-
 services:
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
     volumes:
-      - ./backend:/app
+      - ./backend:/app/backend
       - ./temp_uploads:/app/temp_uploads
       - ./layouts:/app/layouts
       - ./data:/app/data
@@ -17,10 +17,12 @@ services:
       - redis
 
   worker:
-    build: ./backend
-    command: celery -A celery_app worker --loglevel=info
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: celery -A backend.celery_app worker --loglevel=info
     volumes:
-      - ./backend:/app
+      - ./backend:/app/backend
       - ./temp_uploads:/app/temp_uploads
       - ./layouts:/app/layouts
       - ./data:/app/data
