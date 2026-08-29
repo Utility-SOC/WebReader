@@ -263,6 +263,31 @@ def extract_text_from_pdf_range(
         
     return extracted_text, extracted_images
 
+_PAGE_MARKER_TEXT_RE = re.compile(r'^[ivxlcdm0-9\-\.]{1,8}$', re.IGNORECASE)
+
+def _strip_epub_page_markers(soup) -> None:
+    """
+    Remove EPUB page-break/page-number markers so they don't end up as stray
+    tokens in the extracted reading text. EPUB3 marks these with
+    epub:type="pagebreak" (sometimes carrying the page number as the
+    element's visible text, e.g. <span epub:type="pagebreak">14</span>);
+    older/Calibre-generated EPUBs typically use a class or id containing
+    "page" instead, with the page number as the element's only content.
+    """
+    for tag in soup.find_all(True):
+        epub_type = tag.get('epub:type') or tag.get('{http://www.idpf.org/2007/ops}type') or ''
+        classes = ' '.join(tag.get('class') or [])
+        marker_hint = f"{epub_type} {classes} {tag.get('id') or ''}".lower()
+
+        if 'pagebreak' in marker_hint or 'page-break' in marker_hint:
+            tag.decompose()
+            continue
+
+        if 'page' in marker_hint:
+            text = tag.get_text(strip=True)
+            if text and _PAGE_MARKER_TEXT_RE.match(text):
+                tag.decompose()
+
 def load_epub_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Manually unzip and extract text from EPUB, preserving chapter structure.
@@ -323,7 +348,8 @@ def load_epub_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
                     from bs4 import BeautifulSoup
                     soup = BeautifulSoup(html, "html.parser")
                     for tag in soup(["script", "style"]): tag.decompose()
-                    
+                    _strip_epub_page_markers(soup)
+
                     chapter_text = soup.get_text(separator=' ', strip=True) + "\n\n"
                     if not chapter_text.strip(): continue
 

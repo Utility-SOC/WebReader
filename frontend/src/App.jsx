@@ -95,6 +95,12 @@ function App() {
   };
 
   // Handler for file upload
+  // Tab title reflects the loaded file (no book-title metadata is extracted
+  // server-side, so the filename minus extension is the closest proxy)
+  useEffect(() => {
+    document.title = currentFile ? currentFile.replace(/\.[^.]+$/, '') : 'WebReader';
+  }, [currentFile]);
+
   // Return to the upload screen to load a different file (or redo the current
   // one with the other extraction mode — automatic vs. manual — since that
   // choice is only offered at upload time).
