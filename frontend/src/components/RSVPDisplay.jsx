@@ -62,7 +62,7 @@ const RSVPDisplay = ({ words, index, settings, appearance, isDark, images }) => 
             )}
             <div className="flex items-baseline w-full justify-center text-center relative z-10 px-4">
                 <div className="flex-1 text-right opacity-60 font-medium whitespace-pre">{settings.bionicBolding ? applyBionic(processed.left) : processed.left}</div>
-                <div className={`mx-1 font-bold transform transition-transform duration-75 ${processed.isPivot ? 'text-blue-500 scale-110' : ''}`}>{processed.center}</div>
+                <div className={`mx-1 font-bold transform transition-transform duration-75 ${processed.isPivot ? 'text-red-500 scale-110' : ''}`}>{processed.center}</div>
                 <div className="flex-1 text-left opacity-60 font-medium whitespace-pre">{settings.bionicBolding ? applyBionic(processed.right) : processed.right}</div>
             </div>
         </div>

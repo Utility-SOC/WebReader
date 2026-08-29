@@ -8,7 +8,18 @@ import ChapterSelector from './components/ChapterSelector';
 import AudioModal from './components/AudioModal';
 import SettingsModal from './components/SettingsModal';
 import { Settings, Play, Pause, RotateCcw, Image, BookOpen, Volume2, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
-import { PRESETS } from './constants';
+import { PRESETS, FONTS } from './constants';
+
+const PREFS_KEY = "webreader:preferences:v1";
+
+const loadPrefs = () => {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
 
 function App() {
   const [words, setWords] = useState([]);
@@ -21,11 +32,14 @@ function App() {
   const [statusMessage, setStatusMessage] = useState("");
   const [currentFile, setCurrentFile] = useState(null); // Track filename
 
+  const savedPrefs = useRef(loadPrefs()).current;
+
   // Settings
-  const [settings, setSettings] = useState(PRESETS.orp_focused.config);
+  const [settings, setSettings] = useState(savedPrefs.settings || PRESETS.orp_focused.config);
+  const [activePresetId, setActivePresetId] = useState(savedPrefs.activePresetId || 'orp_focused');
 
   // Appearance
-  const [appearance, setAppearance] = useState({
+  const [appearance, setAppearance] = useState(savedPrefs.appearance || {
     fontSize: 60,
     fontFamily: "'Courier New', monospace",
     containerWidth: 1024
@@ -44,7 +58,7 @@ function App() {
   const [manualBoxes, setManualBoxes] = useState(null);
 
   // Dynamic Punctuation State
-  const [punctuationRules, setPunctuationRules] = useState([
+  const [punctuationRules, setPunctuationRules] = useState(savedPrefs.punctuationRules || [
     { str: ".", val: 2.0 },
     { str: ",", val: 1.5 },
     { str: ";", val: 1.5 },
@@ -53,6 +67,18 @@ function App() {
     { str: "—", val: 1.5 },
     { str: "\n\n", val: 3.0 }
   ]);
+
+  // Persist reading/appearance preferences across reloads
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ settings, appearance, punctuationRules, activePresetId }));
+    } catch { /* localStorage unavailable (private mode, etc.) — settings just won't persist */ }
+  }, [settings, appearance, punctuationRules, activePresetId]);
+
+  const applyPreset = (id) => {
+    setActivePresetId(id);
+    setSettings(PRESETS[id].config);
+  };
 
   // Handler for file upload
   const handleUpload = async (e) => {
@@ -121,7 +147,7 @@ function App() {
           const data = await res.json();
 
           if (data.status === "processing") {
-            setStatusMessage("Processing PDF... This may take a moment.");
+            setStatusMessage("Processing document... This may take a moment.");
           } else if (data.status === "completed") {
             setWords(data.result.words || []);
             setImages(data.result.images || []);
@@ -247,7 +273,6 @@ function App() {
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">WebReader</h1>
-              <p className={`text-xs font-medium tracking-wide uppercase opacity-50 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Scientific Speed Reading</p>
             </div>
           </div>
 
@@ -285,11 +310,11 @@ function App() {
               ) : words.length === 0 ? (
                 <div className="text-center space-y-8 max-w-lg mx-auto animate-in zoom-in-95 duration-500">
                   <div className="space-y-4">
-                    <h2 className={`text-4xl sm:text-5xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                      Read Faster. <br /> <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Learn More.</span>
+                    <h2 className={`text-2xl font-semibold tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                      No document loaded
                     </h2>
                     <p className={`text-lg ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                      Upload your documents to experience improved comprehension with RSVP technology.
+                      Upload a file to begin reading.
                     </p>
                   </div>
 
@@ -393,6 +418,69 @@ function App() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Quick Settings — always available, not just in the gear menu */}
+          <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className={`rounded-2xl border p-5 ${cardClasses}`}>
+              <h3 className="font-semibold mb-3 flex items-center gap-2">Reading Presets</h3>
+              <div className="space-y-2">
+                {Object.values(PRESETS).map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => applyPreset(preset.id)}
+                    className={`w-full text-left p-3 rounded-xl transition-all border ${
+                      activePresetId === preset.id
+                        ? (isDark ? 'border-indigo-500 bg-indigo-500/10' : 'border-indigo-400 bg-indigo-50')
+                        : (isDark ? 'border-transparent hover:bg-white/5' : 'border-transparent hover:bg-gray-50')
+                    }`}
+                  >
+                    <div className="font-medium text-sm">{preset.label}</div>
+                    <div className="text-xs opacity-50">{preset.citation}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className={`rounded-2xl border p-5 space-y-6 ${cardClasses}`}>
+              <div>
+                <h3 className="font-semibold mb-3">Appearance</h3>
+                <label className="block text-xs opacity-70 mb-1">Font</label>
+                <select
+                  value={appearance.fontFamily}
+                  onChange={(e) => setAppearance({ ...appearance, fontFamily: e.target.value })}
+                  className={`w-full p-2 rounded-lg border text-sm mb-4 ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}
+                >
+                  {FONTS.map(f => <option key={f.name} value={f.family}>{f.label}</option>)}
+                </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Size</span><span>{appearance.fontSize}px</span></div>
+                    <input type="range" min="24" max="120" value={appearance.fontSize} onChange={(e) => setAppearance({ ...appearance, fontSize: Number(e.target.value) })} className="w-full" />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Width</span><span>{appearance.containerWidth}px</span></div>
+                    <input type="range" min="400" max="1400" step="20" value={appearance.containerWidth} onChange={(e) => setAppearance({ ...appearance, containerWidth: Number(e.target.value) })} className="w-full" />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-semibold mb-3">Mechanics</h3>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Speed</span><span className="text-indigo-400 font-mono">{settings.wpm} WPM</span></div>
+                    <input type="range" min="100" max="900" step="10" value={settings.wpm} onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })} className="w-full" />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Chunk Size</span><span className="text-indigo-400 font-mono">{settings.chunkSize} Words</span></div>
+                    <input type="range" min="1" max="6" step="1" value={settings.chunkSize} onChange={(e) => setSettings({ ...settings, chunkSize: Number(e.target.value) })} className="w-full" />
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs opacity-40 text-center">More settings available in the ⚙ menu above.</p>
+            </div>
           </div>
         </main>
       </div>
