@@ -38,10 +38,13 @@ function App() {
   const [activePresetId, setActivePresetId] = useState(savedPrefs.activePresetId || 'orp_focused');
 
   // Appearance
-  const [appearance, setAppearance] = useState(savedPrefs.appearance || {
+  const [appearance, setAppearance] = useState({
     fontSize: 60,
     fontFamily: "'Courier New', monospace",
-    containerWidth: 1024
+    containerWidth: 1024,
+    orpColor: '#ef4444',
+    textColor: '',
+    ...savedPrefs.appearance
   });
 
   const timerRef = useRef(null);
@@ -514,7 +517,7 @@ function App() {
                 >
                   {FONTS.map(f => <option key={f.name} value={f.family}>{f.label}</option>)}
                 </select>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
                     <div className="flex justify-between text-xs opacity-70 mb-1"><span>Size</span><span>{appearance.fontSize}px</span></div>
                     <input type="range" min="24" max="120" value={appearance.fontSize} onChange={(e) => setAppearance({ ...appearance, fontSize: Number(e.target.value) })} className="w-full" />
@@ -522,6 +525,21 @@ function App() {
                   <div>
                     <div className="flex justify-between text-xs opacity-70 mb-1"><span>Width</span><span>{appearance.containerWidth}px</span></div>
                     <input type="range" min="400" max="1400" step="20" value={appearance.containerWidth} onChange={(e) => setAppearance({ ...appearance, containerWidth: Number(e.target.value) })} className="w-full" />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs opacity-70 mb-1">
+                    <span>Text Color</span>
+                    {appearance.textColor && <button onClick={() => setAppearance({ ...appearance, textColor: '' })} className="text-indigo-400 hover:underline">Reset to theme</button>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={appearance.textColor || (isDark ? '#f3f4f6' : '#111827')}
+                      onChange={(e) => setAppearance({ ...appearance, textColor: e.target.value })}
+                      className="h-9 w-14 rounded cursor-pointer bg-transparent border border-gray-500/30"
+                    />
+                    <span className="text-xs opacity-50">{appearance.textColor || 'Using theme default'}</span>
                   </div>
                 </div>
               </div>
@@ -544,6 +562,18 @@ function App() {
                 <div>
                   <div className="flex justify-between text-xs opacity-70 mb-1"><span>ORP Pivot Position</span><span className="text-indigo-400 font-mono">{Math.round(settings.orpOffset * 100)}%</span></div>
                   <input type="range" min="0.1" max="0.9" step="0.05" value={settings.orpOffset} onChange={(e) => setSettings({ ...settings, orpOffset: Number(e.target.value) })} className="w-full" />
+                </div>
+                <div>
+                  <div className="text-xs opacity-70 mb-1">ORP Highlight Color</div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={appearance.orpColor}
+                      onChange={(e) => setAppearance({ ...appearance, orpColor: e.target.value })}
+                      className="h-9 w-14 rounded cursor-pointer bg-transparent border border-gray-500/30"
+                    />
+                    <span className="text-xs opacity-50">Red is the common convention (strongest contrast against body text); pick whatever reads best for you.</span>
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                   <label className={`flex items-center gap-2 cursor-pointer select-none p-2.5 rounded-lg text-sm ${isDark ? 'bg-black/20 hover:bg-black/30' : 'bg-gray-50 hover:bg-gray-100'}`}>
