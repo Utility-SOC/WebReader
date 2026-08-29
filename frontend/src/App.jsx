@@ -476,6 +476,20 @@ function App() {
                   </div>
 
                 </div>
+
+                {/* Speed — the single most important control, so it lives right under Play */}
+                <div className="w-[80%] mx-auto mt-6">
+                  <div className="flex justify-between text-xs font-medium tracking-wider opacity-60 mb-1">
+                    <span>SPEED</span>
+                    <span className="text-indigo-400 font-mono">{settings.wpm} WPM</span>
+                  </div>
+                  <input
+                    type="range" min="100" max="900" step="10"
+                    value={settings.wpm}
+                    onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })}
+                    className="w-full h-2 accent-indigo-500 cursor-pointer"
+                  />
+                </div>
               </div>
             )}
           </div>
