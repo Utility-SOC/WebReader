@@ -7,9 +7,9 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app/backend
-      - ./temp_uploads:/app/temp_uploads
-      - ./layouts:/app/layouts
-      - ./data:/app/data
+      - ./temp_uploads:/app/backend/temp_uploads
+      - ./layouts:/app/backend/layouts
+      - ./data:/app/backend/data
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - TESSERACT_CMD=/usr/bin/tesseract
@@ -23,9 +23,9 @@ services:
     command: celery -A backend.celery_app worker --loglevel=info
     volumes:
       - ./backend:/app/backend
-      - ./temp_uploads:/app/temp_uploads
-      - ./layouts:/app/layouts
-      - ./data:/app/data
+      - ./temp_uploads:/app/backend/temp_uploads
+      - ./layouts:/app/backend/layouts
+      - ./data:/app/backend/data
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - TESSERACT_CMD=/usr/bin/tesseract
