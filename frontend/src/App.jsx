@@ -6,8 +6,7 @@ import PdfManualEditor from './components/PdfManualEditor';
 import ImageGallery from './components/ImageGallery';
 import ChapterSelector from './components/ChapterSelector';
 import AudioModal from './components/AudioModal';
-import SettingsModal from './components/SettingsModal';
-import { Settings, Play, Pause, RotateCcw, Image, BookOpen, Volume2, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
+import { Play, Pause, RotateCcw, Image, BookOpen, Volume2, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
 import { PRESETS, FONTS } from './constants';
 
 const PREFS_KEY = "webreader:preferences:v1";
@@ -52,7 +51,6 @@ function App() {
   // Chapter Selection State
   const [chapters, setChapters] = useState([]);
   const [showChapterSelector, setShowChapterSelector] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [showAudioModal, setShowAudioModal] = useState(false);
   const [manualBoxes, setManualBoxes] = useState(null);
@@ -80,7 +78,37 @@ function App() {
     setSettings(PRESETS[id].config);
   };
 
+  // Quick punctuation-equalizer form (main-screen panel)
+  const [newRuleStr, setNewRuleStr] = useState("");
+  const [newRuleVal, setNewRuleVal] = useState(1.5);
+  const addPunctuationRule = () => {
+    if (!newRuleStr) return;
+    setPunctuationRules(prev => [...prev, { str: newRuleStr, val: Number(newRuleVal) }]);
+    setNewRuleStr("");
+    setNewRuleVal(1.5);
+  };
+  const removePunctuationRule = (idx) => {
+    setPunctuationRules(prev => prev.filter((_, i) => i !== idx));
+  };
+
   // Handler for file upload
+  // Return to the upload screen to load a different file (or redo the current
+  // one with the other extraction mode — automatic vs. manual — since that
+  // choice is only offered at upload time).
+  const resetToUpload = () => {
+    setWords([]);
+    setImages([]);
+    setChapters([]);
+    setIndex(0);
+    setIsPlaying(false);
+    setLoading(false);
+    setTaskId(null);
+    setStatusMessage("");
+    setCurrentFile(null);
+    setTempFile(null);
+    setManualBoxes(null);
+  };
+
   const handleUpload = async (e) => {
     const selected = e.target.files[0];
     if (!selected) return;
@@ -171,6 +199,35 @@ function App() {
     }
     return () => clearInterval(interval);
   }, [loading, taskId]);
+
+  // Spacebar Play/Pause
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (showEditor) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        setIsPlaying(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showEditor]);
+
+  // Mouse Wheel Speed Control — scroll over the reader to speed up/slow down
+  const readerCardRef = useRef(null);
+  useEffect(() => {
+    const el = readerCardRef.current;
+    if (!el || showEditor) return;
+    const handleWheel = (e) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 10 : -10;
+      setSettings(prev => ({ ...prev, wpm: Math.max(100, Math.min(1000, prev.wpm + delta)) }));
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [showEditor]);
 
   const handleManualFinish = async (boxesMap, startPage = 1) => {
     setShowEditor(false);
@@ -280,16 +337,13 @@ function App() {
             <button onClick={() => setIsDark(!isDark)} className={`p-3 rounded-full transition-all duration-300 ${isDark ? 'hover:bg-gray-800 text-yellow-400' : 'bg-white hover:bg-gray-100 text-gray-600 shadow-sm border border-gray-100'}`}>
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <button onClick={() => setShowSettings(true)} className={`p-3 rounded-full transition-all duration-300 ${isDark ? 'hover:bg-gray-800 text-gray-300 hover:text-white' : 'bg-white hover:bg-gray-100 text-gray-600 shadow-sm border border-gray-100'}`}>
-              <Settings size={20} />
-            </button>
           </div>
         </header>
 
         {/* Main Interface */}
         <main className="w-full flex-1 flex flex-col items-center justify-center gap-8 w-full max-w-5xl">
 
-          <div className={`w-full relative rounded-[2.5rem] overflow-hidden backdrop-blur-xl border transition-all duration-500 ${cardClasses}`}>
+          <div ref={readerCardRef} className={`w-full relative rounded-[2.5rem] overflow-hidden backdrop-blur-xl border transition-all duration-500 ${cardClasses}`}>
 
             {/* Content Area */}
             <div className="min-h-[500px] flex flex-col items-center justify-center p-8 sm:p-12 relative">
@@ -364,6 +418,9 @@ function App() {
 
                   {/* Left Actions */}
                   <div className="flex items-center gap-2 justify-start">
+                    <button onClick={resetToUpload} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Load a Different File">
+                      <UploadCloud size={20} />
+                    </button>
                     <button onClick={() => setShowChapterSelector(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Chapters">
                       <BookOpen size={20} />
                     </button>
@@ -420,11 +477,13 @@ function App() {
             )}
           </div>
 
-          {/* Quick Settings — always available, not just in the gear menu */}
+          {/* Settings — all on the front page, each pane collapsible */}
           <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className={`rounded-2xl border p-5 ${cardClasses}`}>
-              <h3 className="font-semibold mb-3 flex items-center gap-2">Reading Presets</h3>
-              <div className="space-y-2">
+            <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
+              <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                Reading Presets <span className="text-xs opacity-40">▾</span>
+              </summary>
+              <div className="space-y-2 mt-3">
                 {Object.values(PRESETS).map((preset) => (
                   <button
                     key={preset.id}
@@ -440,11 +499,13 @@ function App() {
                   </button>
                 ))}
               </div>
-            </div>
+            </details>
 
-            <div className={`rounded-2xl border p-5 space-y-6 ${cardClasses}`}>
-              <div>
-                <h3 className="font-semibold mb-3">Appearance</h3>
+            <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
+              <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                Appearance <span className="text-xs opacity-40">▾</span>
+              </summary>
+              <div className="mt-3">
                 <label className="block text-xs opacity-70 mb-1">Font</label>
                 <select
                   value={appearance.fontFamily}
@@ -464,35 +525,67 @@ function App() {
                   </div>
                 </div>
               </div>
+            </details>
 
-              <div>
-                <h3 className="font-semibold mb-3">Mechanics</h3>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Speed</span><span className="text-indigo-400 font-mono">{settings.wpm} WPM</span></div>
-                    <input type="range" min="100" max="900" step="10" value={settings.wpm} onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })} className="w-full" />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Chunk Size</span><span className="text-indigo-400 font-mono">{settings.chunkSize} Words</span></div>
-                    <input type="range" min="1" max="6" step="1" value={settings.chunkSize} onChange={(e) => setSettings({ ...settings, chunkSize: Number(e.target.value) })} className="w-full" />
-                  </div>
+            <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
+              <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                Mechanics <span className="text-xs opacity-40">▾</span>
+              </summary>
+              <div className="space-y-4 mt-3">
+                <div>
+                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>Speed</span><span className="text-indigo-400 font-mono">{settings.wpm} WPM</span></div>
+                  <input type="range" min="100" max="900" step="10" value={settings.wpm} onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })} className="w-full" />
+                  <div className="text-xs opacity-40 mt-1">Or scroll over the reader above to adjust speed.</div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>Chunk Size</span><span className="text-indigo-400 font-mono">{settings.chunkSize} Words</span></div>
+                  <input type="range" min="1" max="6" step="1" value={settings.chunkSize} onChange={(e) => setSettings({ ...settings, chunkSize: Number(e.target.value) })} className="w-full" />
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>ORP Pivot Position</span><span className="text-indigo-400 font-mono">{Math.round(settings.orpOffset * 100)}%</span></div>
+                  <input type="range" min="0.1" max="0.9" step="0.05" value={settings.orpOffset} onChange={(e) => setSettings({ ...settings, orpOffset: Number(e.target.value) })} className="w-full" />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  <label className={`flex items-center gap-2 cursor-pointer select-none p-2.5 rounded-lg text-sm ${isDark ? 'bg-black/20 hover:bg-black/30' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                    <input type="checkbox" checked={settings.guideLines} onChange={e => setSettings({ ...settings, guideLines: e.target.checked })} /> Guide Lines
+                  </label>
+                  <label className={`flex items-center gap-2 cursor-pointer select-none p-2.5 rounded-lg text-sm ${isDark ? 'bg-black/20 hover:bg-black/30' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                    <input type="checkbox" checked={settings.bionicBolding} onChange={e => setSettings({ ...settings, bionicBolding: e.target.checked })} /> Bionic Bolding
+                  </label>
+                  <label className={`flex items-center gap-2 cursor-pointer select-none p-2.5 rounded-lg text-sm ${isDark ? 'bg-black/20 hover:bg-black/30' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                    <input type="checkbox" checked={settings.orpCentering} onChange={e => setSettings({ ...settings, orpCentering: e.target.checked })} /> Force ORP Centering
+                  </label>
                 </div>
               </div>
+            </details>
 
-              <p className="text-xs opacity-40 text-center">More settings available in the ⚙ menu above.</p>
-            </div>
+            <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
+              <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                Punctuation <span className="text-xs opacity-40">▾</span>
+              </summary>
+              <div className="mt-3">
+                <div className="text-xs opacity-70 mb-2">Delay multipliers for pacing.</div>
+                <div className="space-y-1 mb-4 max-h-48 overflow-y-auto">
+                  {punctuationRules.map((rule, i) => (
+                    <div key={i} className={`flex justify-between items-center text-sm p-2 rounded-lg ${isDark ? 'bg-black/20' : 'bg-gray-50'}`}>
+                      <span className="font-mono opacity-80">"{rule.str === "\n\n" ? "¶" : rule.str}"</span>
+                      <span className="font-bold text-indigo-400">{rule.val}x</span>
+                      <button onClick={() => removePunctuationRule(i)} className="text-red-500 hover:text-red-400 font-bold px-2">×</button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input placeholder="String" value={newRuleStr} onChange={e => setNewRuleStr(e.target.value)} className={`w-20 p-2 text-sm rounded-lg border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`} />
+                  <input type="number" step="0.1" value={newRuleVal} onChange={e => setNewRuleVal(e.target.value)} className={`w-16 p-2 text-sm rounded-lg border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`} />
+                  <button onClick={addPunctuationRule} className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold">ADD</button>
+                </div>
+              </div>
+            </details>
           </div>
         </main>
       </div>
 
       {/* Modals */}
-      {showSettings && <SettingsModal
-        settings={settings} setSettings={setSettings}
-        appearance={appearance} setAppearance={setAppearance}
-        punctuationRules={punctuationRules} setPunctuationRules={setPunctuationRules}
-        onClose={() => setShowSettings(false)} isDark={isDark}
-      />}
-
       {showChapterSelector && <ChapterSelector
         chapters={chapters}
         onSelect={(idx) => { setIndex(idx); setShowChapterSelector(false); }}
