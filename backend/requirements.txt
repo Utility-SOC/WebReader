@@ -13,3 +13,13 @@ celery
 redis
 edge-tts
 mobi
+
+# Image captioning (Florence-2). CPU-only wheels -- no GPU expected in
+# deployment, and the default PyPI torch wheel bundles CUDA and is much
+# larger than needed.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.8.0
+torchvision==0.23.0
+transformers
+einops
+timm
