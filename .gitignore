@@ -37,6 +37,8 @@ build_log.txt
 /tesseract_bundle/
 /desktop_release/
 WebReader-*.zip
+deploy/kubernetes/*.tgz
+deploy/docker/data/
 
 # License texts fetched at build time (committed ones are kept)
 THIRD_PARTY_LICENSES/leptonica-license.txt

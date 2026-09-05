@@ -166,6 +166,27 @@ jobs:
           zip -r ../WebReader-Portable.zip .
           cd ..
 
+      - name: Package Docker deploy bundle
+        # Standalone -- pulls prebuilt GHCR images (built by
+        # build-images.yml), no repo checkout needed by whoever downloads
+        # this. See deploy/docker/docker-compose.yml for why this isn't
+        # just the repo-root docker-compose.yml (that one builds from
+        # source and bind-mounts it for local dev).
+        run: |
+          cd deploy/docker
+          zip -r ../../WebReader-Docker-Deploy.zip .
+          cd ../..
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Package Kubernetes deploy bundle
+        run: |
+          helm package charts/webreader -d deploy/kubernetes/
+          cd deploy/kubernetes
+          zip -r ../../WebReader-Kubernetes-Deploy.zip .
+          cd ../..
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -176,3 +197,5 @@ jobs:
           files: |
             WebReader-Portable.zip
             WebReader-Desktop-Windows.zip
+            WebReader-Docker-Deploy.zip
+            WebReader-Kubernetes-Deploy.zip
