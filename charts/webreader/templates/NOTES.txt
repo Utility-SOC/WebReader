@@ -1,0 +1,31 @@
+WebReader has been deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+IMPORTANT constraints before you scale anything:
+  - backend and worker MUST stay at 1 replica each. backend/database.py uses
+    SQLite (a single-writer file database) shared between them via the
+    "{{ include "webreader.fullname" . }}-data" PVC, and
+    backend/captioning.py's Florence-2 model cache only dedupes within a
+    single process -- more replicas means more model copies competing for
+    the same memory limit, not more throughput.
+  - Likewise, do not raise worker.concurrency above 1 unless captioning is
+    moved to its own dedicated queue -- see the comment in values.yaml.
+  - If you haven't already, build and push the backend/frontend images to a
+    registry your cluster can pull from (see the comment at the top of
+    values.yaml for the exact commands), then set image.backend.repository/tag
+    and image.frontend.repository/tag accordingly.
+
+Access the app:
+{{- if .Values.ingress.enabled }}
+  http://{{ .Values.ingress.host }}
+{{- else }}
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "webreader.fullname" . }}-frontend {{ .Values.frontend.service.port }}:{{ .Values.frontend.service.port }}
+  then open http://localhost:{{ .Values.frontend.service.port }}
+{{- end }}
+
+Check backend health directly:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "webreader.fullname" . }}-backend {{ .Values.backend.service.port }}:{{ .Values.backend.service.port }}
+  curl http://localhost:{{ .Values.backend.service.port }}/health
+
+If a pod gets OOMKilled during captioning, raise backend.resources.limits.memory
+/ worker.resources.limits.memory in values.yaml (validated peak on CPU is
+~2.3-2.6GB per pod; 4Gi is the default limit).

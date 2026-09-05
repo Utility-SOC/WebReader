@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "webreader.fullname" . }}-env
+  labels:
+    {{- include "webreader.labels" . | nindent 4 }}
+data:
+  CELERY_BROKER_URL: "redis://{{ include "webreader.fullname" . }}-redis:6379/0"
+  TESSERACT_CMD: {{ .Values.env.tesseractCmd | quote }}

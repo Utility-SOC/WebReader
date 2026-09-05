@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "webreader.fullname" . }}-worker
+  labels:
+    {{- include "webreader.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  # Do not scale beyond 1 -- see values.yaml worker.replicaCount and
+  # templates/NOTES.txt (SQLite + per-process model cache constraints).
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "webreader.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "webreader.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: worker
+    spec:
+      {{- if and .Values.persistence.enabled (eq .Values.persistence.accessMode "ReadWriteOnce") }}
+      # ReadWriteOnce only allows pods on the same NODE to mount the shared
+      # data PVC concurrently. Backend and worker both need it (SQLite data,
+      # temp_uploads, layouts), so require the worker to land on whichever
+      # node the backend is already running on.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: {{ include "webreader.name" . }}
+                  app.kubernetes.io/instance: {{ .Release.Name }}
+                  app.kubernetes.io/component: backend
+              topologyKey: "kubernetes.io/hostname"
+      {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: worker
+          image: "{{ .Values.image.backend.repository }}:{{ .Values.image.backend.tag }}"
+          imagePullPolicy: {{ .Values.image.backend.pullPolicy }}
+          command: ["celery"]
+          args:
+            - "-A"
+            - "backend.celery_app"
+            - "worker"
+            - "--loglevel=info"
+            - "--concurrency={{ .Values.worker.concurrency }}"
+          envFrom:
+            - configMapRef:
+                name: {{ include "webreader.fullname" . }}-env
+          volumeMounts:
+            - name: data
+              mountPath: /app/backend/temp_uploads
+              subPath: temp_uploads
+            - name: data
+              mountPath: /app/backend/layouts
+              subPath: layouts
+            - name: data
+              mountPath: /app/backend/data
+              subPath: data
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "webreader.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
