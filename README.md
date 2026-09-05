@@ -49,6 +49,8 @@ chmod +x run_linux.sh
 
 *Note: Ensure Redis is running in the background before launching the application.*
 
+*Note: image captioning (AI-generated descriptions for photos/figures with no text) is optional and not included in the desktop build or `run_linux.sh`/`run_windows` setup -- it needs heavy ML dependencies (PyTorch, ~500MB+) that are deliberately left out of `requirements.txt` to keep those installs light. Images are still OCR'd normally either way; only the AI description is skipped. It's available in the Docker/server deployment (`backend/requirements.txt`, `docker-compose.yml`) if you want it.*
+
 ## Basic Tutorial
 
 WebReader is designed to be intuitive and fast. Here is how to use the core features:
