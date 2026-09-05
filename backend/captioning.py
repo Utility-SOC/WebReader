@@ -37,22 +37,41 @@ Docker rather than affecting the host.
 import logging
 import threading
 
-import torch
 from PIL import Image
-from transformers import AutoModelForCausalLM, AutoProcessor
 
 logger = logging.getLogger("SpeedReaderUtils")
-
-# Default backend (onednn) requires AVX2/AVX512; qnnpack works everywhere.
-torch.backends.quantized.engine = "qnnpack"
 
 MODEL_ID = "microsoft/Florence-2-base"
 TASK_PROMPT = "<DETAILED_CAPTION>"
 MAX_IMAGE_SIDE = 1024
 
+# torch/transformers are only in backend/requirements.txt (the Docker
+# image), not the root requirements.txt used by run_linux.sh / the desktop
+# PyInstaller build -- those stay lightweight on purpose. Importing this
+# module must not blow up backend/utils.py (and therefore the entire app)
+# on installs that skip the heavy ML deps; captioning just becomes a no-op.
+try:
+    import torch
+    from transformers import AutoModelForCausalLM, AutoProcessor
+
+    # Default backend (onednn) requires AVX2/AVX512; qnnpack works everywhere.
+    torch.backends.quantized.engine = "qnnpack"
+    _AVAILABLE = True
+except ImportError as e:
+    _AVAILABLE = False
+    logger.warning(
+        f"Image captioning disabled: {e}. Install torch/transformers/timm/einops "
+        "(see backend/requirements.txt) to enable it. Falling back to OCR-only "
+        "image processing."
+    )
+
 _lock = threading.Lock()
 _model = None
 _processor = None
+# Once a load attempt fails (OOM, corrupt cache, no network to fetch the
+# model, unsupported hardware, ...), don't retry it on every subsequent
+# image -- that just repeats a slow failure for each one. Fail fast instead.
+_load_failed = False
 
 
 def _load():
@@ -74,21 +93,38 @@ def _load():
 
 
 def _get_model():
+    global _load_failed
+    if _load_failed:
+        raise RuntimeError("captioning model failed to load previously; not retrying")
     if _model is None:
         with _lock:
-            if _model is None:  # re-check inside the lock
-                _load()
+            if _model is None and not _load_failed:  # re-check inside the lock
+                try:
+                    _load()
+                except Exception:
+                    _load_failed = True
+                    raise
     return _model, _processor
 
 
-@torch.inference_mode()
 def caption_image(image: Image.Image) -> str:
-    """Caption a PIL image. Returns "" on any failure -- captioning is an
-    enhancement to document processing, not something that should fail the
-    whole task if the model has a bad day on a particular image."""
+    """Caption a PIL image. Returns "" if captioning isn't available (missing
+    deps, failed to load, or any per-image error) -- this is an enhancement
+    to document processing, not something that should fail the whole task
+    over a model that won't run on this machine."""
+    if not _AVAILABLE:
+        return ""
     try:
-        model, processor = _get_model()
+        return _caption_image_impl(image)
+    except Exception as e:
+        logger.error(f"Captioning failed: {e}")
+        return ""
 
+
+def _caption_image_impl(image: Image.Image) -> str:
+    model, processor = _get_model()
+
+    with torch.inference_mode():
         img = image.convert("RGB")
         if max(img.size) > MAX_IMAGE_SIDE:
             img.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE), Image.LANCZOS)
@@ -107,6 +143,3 @@ def caption_image(image: Image.Image) -> str:
             generated_text, task=TASK_PROMPT, image_size=img.size
         )
         return parsed[TASK_PROMPT].strip()
-    except Exception as e:
-        logger.error(f"Captioning failed: {e}")
-        return ""
