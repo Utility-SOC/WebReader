@@ -448,6 +448,8 @@ import subprocess
 import shutil
 import uuid
 import platform
+import asyncio
+import edge_tts
 
 def cleanup_text_for_tts(text: str) -> str:
     """
@@ -517,6 +519,66 @@ def generate_tts_cli(text: str, output_path: str, voice_id: Optional[str] = None
     except subprocess.CalledProcessError as e:
         logger.error(f"TTS Generation failed. Stdout: {e.stdout} \nStderr: {e.stderr}")
         raise Exception(f"TTS Backend Error via edge-tts: {e.stderr}")
+
+async def _synthesize_with_word_boundaries(text: str, voice_id: Optional[str] = None) -> Tuple[bytes, List[Dict[str, Any]]]:
+    """
+    Synthesize speech via edge-tts's streaming API (not the CLI) so we get
+    WordBoundary events alongside the audio -- offset/duration per spoken
+    word token, in 100-nanosecond units per the API, converted to ms here.
+    Used to drive RSVP word-flash sync against live playback.
+    """
+    voice_id = voice_id or "en-US-AriaNeural"
+    communicate = edge_tts.Communicate(text, voice_id)
+    audio_chunks = bytearray()
+    boundaries: List[Dict[str, Any]] = []
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_chunks.extend(chunk["data"])
+        elif chunk["type"] == "WordBoundary":
+            boundaries.append({
+                "text": chunk["text"],
+                "offset_ms": chunk["offset"] / 10000,
+                "duration_ms": chunk["duration"] / 10000,
+            })
+    return bytes(audio_chunks), boundaries
+
+@app.post("/tts/speak")
+def speak_chunk(
+    text: str = Body(..., embed=True),
+    voice_id: Optional[str] = Body(default=None, embed=True)
+):
+    """
+    Generate audio for a short chunk of already-loaded reader text, plus
+    per-word timing, so the frontend can highlight the word being spoken in
+    sync with playback ("word-flash sync").
+
+    Approximate by nature: edge-tts's own word tokenization doesn't always
+    line up 1:1 with WebReader's tokenization (numbers get expanded to
+    words, contractions may split differently), so the frontend maps
+    `boundaries` to word *positions* within the chunk it sent, not by
+    re-parsing the returned text.
+    """
+    if not text or not text.strip():
+        raise HTTPException(400, "Text is required")
+
+    # Deliberately not cleanup_text_for_tts(): that function strips non-ASCII
+    # and shell-breaking characters for the subprocess/CLI path above. This
+    # path calls the edge-tts library directly (no shell involved), and
+    # altering the text here would throw off word-position alignment with
+    # what the frontend actually sent.
+    normalized = re.sub(r'\s+', ' ', text).strip()
+
+    try:
+        audio_bytes, boundaries = asyncio.run(_synthesize_with_word_boundaries(normalized, voice_id))
+        if not audio_bytes:
+            raise Exception("No audio produced.")
+        return {
+            "audio_base64": base64.b64encode(audio_bytes).decode("ascii"),
+            "boundaries": boundaries,
+        }
+    except Exception as e:
+        logger.error(f"TTS speak (word-sync) failed: {e}")
+        raise HTTPException(500, f"TTS Failed: {e}")
 
 @app.post("/tts")
 def generate_tts(

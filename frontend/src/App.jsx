@@ -6,8 +6,8 @@ import PdfManualEditor from './components/PdfManualEditor';
 import ImageGallery from './components/ImageGallery';
 import ChapterSelector from './components/ChapterSelector';
 import AudioModal from './components/AudioModal';
-import { Play, Pause, RotateCcw, Image, BookOpen, Volume2, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
-import { PRESETS, FONTS } from './constants';
+import { Play, Pause, RotateCcw, Image, BookOpen, Volume2, Headphones, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
+import { PRESETS, FONTS, ORP_COLOR_PRESETS } from './constants';
 
 const PREFS_KEY = "webreader:preferences:v1";
 
@@ -58,6 +58,13 @@ function App() {
   const [showAudioModal, setShowAudioModal] = useState(false);
   const [manualBoxes, setManualBoxes] = useState(null);
 
+  // Word-Flash Sync: read the document aloud (edge-tts) with the RSVP
+  // display advancing in time with playback, instead of the fixed-WPM timer.
+  const [readAloud, setReadAloud] = useState(false);
+  const [ttsLoading, setTtsLoading] = useState(false);
+  const audioElRef = useRef(null);
+  const speakChunkRef = useRef({ startIndex: 0, chunkLength: 0, boundaries: [] });
+
   // Dynamic Punctuation State
   const [punctuationRules, setPunctuationRules] = useState(savedPrefs.punctuationRules || [
     { str: ".", val: 2.0 },
@@ -105,6 +112,8 @@ function App() {
   // one with the other extraction mode — automatic vs. manual — since that
   // choice is only offered at upload time).
   const resetToUpload = () => {
+    audioElRef.current?.pause();
+    setReadAloud(false);
     setWords([]);
     setImages([]);
     setChapters([]);
@@ -209,7 +218,7 @@ function App() {
     return () => clearInterval(interval);
   }, [loading, taskId]);
 
-  // Spacebar Play/Pause
+  // Spacebar Play/Pause, Left/Right skip 50 words
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (showEditor) return;
@@ -217,12 +226,25 @@ function App() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (e.code === "Space") {
         e.preventDefault();
-        setIsPlaying(prev => !prev);
+        // Mirrors handleMainPlayPause: while readAloud is on, Play/Pause
+        // must control the <audio> element, not just the isPlaying flag.
+        if (readAloud) {
+          if (isPlaying) { audioElRef.current?.pause(); setIsPlaying(false); }
+          else { audioElRef.current?.play(); setIsPlaying(true); }
+        } else {
+          setIsPlaying(prev => !prev);
+        }
+      } else if (e.code === "ArrowLeft" && words.length > 0) {
+        e.preventDefault();
+        setIndex(prev => Math.max(0, prev - 50));
+      } else if (e.code === "ArrowRight" && words.length > 0) {
+        e.preventDefault();
+        setIndex(prev => Math.min(words.length, prev + 50));
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showEditor]);
+  }, [showEditor, words.length, readAloud, isPlaying]);
 
   // Mouse Wheel Speed Control — scroll over the reader to speed up/slow down
   const readerCardRef = useRef(null);
@@ -277,9 +299,9 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  // Loop
+  // Loop (fixed-WPM auto-advance; suspended while readAloud drives index instead)
   useEffect(() => {
-    if (isPlaying && index < words.length) {
+    if (isPlaying && !readAloud && index < words.length) {
       const delay = (60000 / settings.wpm) * settings.chunkSize;
       let multiplier = 1;
       const word = words[index];
@@ -296,8 +318,113 @@ function App() {
       timerRef.current = setTimeout(() => setIndex(prev => prev + settings.chunkSize), delay * multiplier);
     }
     return () => clearTimeout(timerRef.current);
-  }, [isPlaying, index, words, settings, punctuationRules]);
+  }, [isPlaying, readAloud, index, words, settings, punctuationRules]);
 
+  // Word-Flash Sync: fetch + play one chunk of audio starting at startIdx,
+  // then chain into the next chunk on 'ended' while readAloud stays on.
+  const SPEAK_CHUNK_SIZE = 60;
+  const playChunkFrom = async (startIdx) => {
+    if (startIdx >= words.length) {
+      setReadAloud(false);
+      setIsPlaying(false);
+      return;
+    }
+    const chunkWords = words.slice(startIdx, startIdx + SPEAK_CHUNK_SIZE);
+    const speakableText = chunkWords.filter(w => !w.startsWith("[FIGURE:")).join(" ");
+
+    if (!speakableText.trim()) {
+      // Pure-image chunk (e.g. a page of figures) -- nothing to speak, just
+      // advance past it and keep going.
+      playChunkFrom(startIdx + chunkWords.length);
+      return;
+    }
+
+    setTtsLoading(true);
+    try {
+      const res = await fetch("/tts/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: speakableText })
+      });
+      if (!res.ok) throw new Error(`TTS request failed (${res.status})`);
+      const data = await res.json();
+
+      const byteChars = atob(data.audio_base64);
+      const byteNumbers = new Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([new Uint8Array(byteNumbers)], { type: "audio/mpeg" });
+      const url = URL.createObjectURL(blob);
+
+      speakChunkRef.current = { startIndex: startIdx, chunkLength: chunkWords.length, boundaries: data.boundaries || [] };
+
+      const audioEl = audioElRef.current;
+      if (audioEl) {
+        if (audioEl.src) URL.revokeObjectURL(audioEl.src);
+        audioEl.src = url;
+        await audioEl.play();
+      }
+    } catch (err) {
+      console.error("Read-aloud failed:", err);
+      alert("Read Aloud failed: " + err.message);
+      setReadAloud(false);
+      setIsPlaying(false);
+    } finally {
+      setTtsLoading(false);
+    }
+  };
+
+  // Map audio playback time -> word index within the current chunk. edge-tts's
+  // own tokenization doesn't always match ours 1:1 (numbers expand to words,
+  // contractions split), so this maps by *position* (which boundary we're
+  // past, scaled onto the chunk's word count) rather than by re-matching text.
+  const handleReadAloudTimeUpdate = () => {
+    const { startIndex, chunkLength, boundaries } = speakChunkRef.current;
+    if (!boundaries.length || !chunkLength) return;
+    const currentMs = (audioElRef.current?.currentTime || 0) * 1000;
+
+    let boundaryIdx = 0;
+    for (let i = 0; i < boundaries.length; i++) {
+      if (boundaries[i].offset_ms <= currentMs) boundaryIdx = i;
+      else break;
+    }
+    const proportion = boundaries.length > 1 ? boundaryIdx / (boundaries.length - 1) : 0;
+    const wordOffset = Math.min(chunkLength - 1, Math.round(proportion * (chunkLength - 1)));
+    setIndex(startIndex + wordOffset);
+  };
+
+  const handleReadAloudEnded = () => {
+    const { startIndex, chunkLength } = speakChunkRef.current;
+    if (readAloud) playChunkFrom(startIndex + chunkLength);
+  };
+
+  const toggleReadAloud = () => {
+    if (readAloud) {
+      setReadAloud(false);
+      setIsPlaying(false);
+      audioElRef.current?.pause();
+    } else {
+      setIsPlaying(true);
+      setReadAloud(true);
+      playChunkFrom(index);
+    }
+  };
+
+  // Play/Pause needs to control the <audio> element while readAloud is
+  // active, instead of just flipping isPlaying (which the fixed-WPM timer
+  // above no longer reads while readAloud is on).
+  const handleMainPlayPause = () => {
+    if (readAloud) {
+      if (isPlaying) {
+        audioElRef.current?.pause();
+        setIsPlaying(false);
+      } else {
+        audioElRef.current?.play();
+        setIsPlaying(true);
+      }
+    } else {
+      setIsPlaying(prev => !prev);
+    }
+  };
 
   if (showEditor && tempFile) {
     return <PdfManualEditor
@@ -315,12 +442,21 @@ function App() {
     ? "bg-[#0f1014] text-gray-100"
     : "bg-[#f8fafc] text-gray-900";
 
+  // Solid, contrast-checked replacement for the old opacity-40..70 "muted
+  // text" convention: alpha-blending toward the background made most of
+  // those fail 4.5:1 in the light theme (gray-500 blended at 40-70% opacity
+  // drops well below AA). gray-400 on the dark background and gray-600 on
+  // the light one both clear 4.5:1 with margin.
+  const mutedText = isDark ? "text-gray-400" : "text-gray-600";
+
   const cardClasses = isDark
     ? "bg-[#181a20]/80 border-white/5 shadow-2xl shadow-black/40"
     : "bg-white/80 border-white/40 shadow-xl shadow-blue-500/5";
 
   return (
     <div className={`min-h-screen transition-colors duration-500 ${themeClasses} selection:bg-indigo-500/30 selection:text-indigo-200 overflow-x-hidden font-sans`}>
+
+      <a href="#main-content" className="skip-link">Skip to main content</a>
 
       {/* Background Ambience */}
       <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
@@ -343,14 +479,14 @@ function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={() => setIsDark(!isDark)} className={`p-3 rounded-full transition-all duration-300 ${isDark ? 'hover:bg-gray-800 text-yellow-400' : 'bg-white hover:bg-gray-100 text-gray-600 shadow-sm border border-gray-100'}`}>
+            <button onClick={() => setIsDark(!isDark)} aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"} className={`p-3 rounded-full transition-all duration-300 ${isDark ? 'hover:bg-gray-800 text-yellow-400' : 'bg-white hover:bg-gray-100 text-gray-600 shadow-sm border border-gray-100'}`}>
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
           </div>
         </header>
 
         {/* Main Interface */}
-        <main className="w-full flex-1 flex flex-col items-center justify-center gap-8 w-full max-w-5xl">
+        <main id="main-content" className="w-full flex-1 flex flex-col items-center justify-center gap-8 w-full max-w-5xl">
 
           <div ref={readerCardRef} className={`w-full relative rounded-[2.5rem] overflow-hidden backdrop-blur-xl border transition-all duration-500 ${cardClasses}`}>
 
@@ -365,9 +501,9 @@ function App() {
                       <div className="w-3 h-3 bg-indigo-500 rounded-full animate-pulse"></div>
                     </div>
                   </div>
-                  <div className="text-center">
+                  <div className="text-center" role="status" aria-live="polite">
                     <h3 className="text-xl font-medium text-indigo-400 mb-2">{statusMessage}</h3>
-                    <p className="text-sm opacity-50">Optimizing text extraction...</p>
+                    <p className={`text-sm ${mutedText}`}>Optimizing text extraction...</p>
                   </div>
                 </div>
               ) : words.length === 0 ? (
@@ -383,17 +519,19 @@ function App() {
 
                   <div className="pt-4">
                     <label className="group relative inline-flex flex-col items-center gap-4 cursor-pointer">
-                      <div className={`w-full h-32 w-64 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 transition-all duration-300 group-hover:border-indigo-500/50 group-hover:bg-indigo-500/5 ${isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-300 bg-white/50'}`}>
+                      <div className={`w-full h-32 w-64 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 transition-all duration-300 group-hover:border-indigo-500/50 group-hover:bg-indigo-500/5 group-focus-within:ring-4 group-focus-within:ring-indigo-500/50 group-focus-within:border-indigo-500 ${isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-300 bg-white/50'}`}>
                         <UploadCloud size={32} className={`transition-colors group-hover:text-indigo-500 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
-                        <span className="text-sm font-medium opacity-70 group-hover:opacity-100">Drop file or click to browse</span>
+                        <span className={`text-sm font-medium ${mutedText} group-hover:text-indigo-500`}>Drop file or click to browse</span>
                       </div>
-                      <input type="file" onChange={handleUpload} accept=".pdf,.epub,.mobi,.azw3,.txt,.docx,.png,.jpg,.jpeg,.webp" className="hidden" />
+                      {/* sr-only, not hidden: a display:none input drops out of the tab order
+                          entirely, leaving keyboard users no way to reach the file picker at all */}
+                      <input type="file" onChange={handleUpload} accept=".pdf,.epub,.mobi,.azw3,.txt,.docx,.png,.jpg,.jpeg,.webp" className="sr-only" />
                     </label>
-                    <p className="text-xs font-mono opacity-40 mt-6">SUPPORTS PDF, EPUB, MOBI, TXT, DOCX, IMAGES</p>
+                    <p className={`text-xs font-mono ${mutedText} mt-6`}>SUPPORTS PDF, EPUB, MOBI, TXT, DOCX, IMAGES</p>
                   </div>
                 </div>
               ) : (
-                <div className="w-full h-full flex items-center justify-center cursor-pointer" onClick={() => setIsPlaying(!isPlaying)}>
+                <div className="w-full h-full flex items-center justify-center cursor-pointer" onClick={handleMainPlayPause}>
                   <RSVPDisplay words={words} images={images} index={index} settings={settings} appearance={appearance} isDark={isDark} />
                 </div>
               )}
@@ -416,7 +554,7 @@ function App() {
                     onChange={(e) => setIndex(Number(e.target.value))}
                     className="absolute inset-0 w-full h-4 -top-1 opacity-0 cursor-pointer"
                   />
-                  <div className="flex justify-between mt-3 text-xs font-medium tracking-wider opacity-60 font-mono">
+                  <div className={`flex justify-between mt-3 text-xs font-medium tracking-wider ${mutedText} font-mono`}>
                     <span>{Math.floor((index / words.length) * 100)}%</span>
                     <span>{index.toLocaleString()} / {words.length.toLocaleString()}</span>
                   </div>
@@ -427,14 +565,14 @@ function App() {
 
                   {/* Left Actions */}
                   <div className="flex items-center gap-2 justify-start">
-                    <button onClick={resetToUpload} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Load a Different File">
+                    <button onClick={resetToUpload} aria-label="Load a different file" className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Load a Different File">
                       <UploadCloud size={20} />
                     </button>
-                    <button onClick={() => setShowChapterSelector(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Chapters">
+                    <button onClick={() => setShowChapterSelector(true)} aria-label="Chapters" className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Chapters">
                       <BookOpen size={20} />
                     </button>
                     {images.length > 0 && (
-                      <button onClick={() => setShowGallery(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Gallery">
+                      <button onClick={() => setShowGallery(true)} aria-label="Image gallery" className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Gallery">
                         <div className="relative">
                           <Image size={20} />
                           <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-500 rounded-full"></span>
@@ -442,12 +580,23 @@ function App() {
                       </button>
                     )}
 
+                    <button
+                      onClick={toggleReadAloud}
+                      disabled={ttsLoading}
+                      aria-label={readAloud ? "Stop reading aloud" : "Read aloud (word-synced narration)"}
+                      aria-pressed={readAloud}
+                      title="Read Aloud"
+                      className={`p-2.5 rounded-xl transition-all ${readAloud ? 'bg-indigo-500/20 text-indigo-400' : (isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500')} ${ttsLoading ? 'opacity-60 cursor-wait' : ''}`}
+                    >
+                      <Headphones size={20} />
+                    </button>
+
                     {/* DOWNLOADS */}
                     <div className="flex gap-1 ml-2 pl-2 border-l border-white/10">
-                      <button onClick={downloadTranscript} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Download Transcript">
+                      <button onClick={downloadTranscript} aria-label="Download transcript" className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Download Transcript">
                         <FileText size={20} />
                       </button>
-                      <button onClick={() => setShowAudioModal(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Download Audio (TTS)">
+                      <button onClick={() => setShowAudioModal(true)} aria-label="Download audio (text-to-speech)" className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Download Audio (TTS)">
                         <Volume2 size={20} />
                       </button>
                     </div>
@@ -455,12 +604,13 @@ function App() {
 
                   {/* Center Playback */}
                   <div className="flex items-center justify-center gap-6">
-                    <button onClick={() => setIndex(Math.max(0, index - 50))} className={`p-3 rounded-full transition-all active:scale-90 ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}>
+                    <button onClick={() => setIndex(Math.max(0, index - 50))} aria-label="Skip back 50 words" className={`p-3 rounded-full transition-all active:scale-90 ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}>
                       <ChevronLeft size={24} />
                     </button>
 
                     <button
-                      onClick={() => setIsPlaying(!isPlaying)}
+                      onClick={handleMainPlayPause}
+                      aria-label={isPlaying ? "Pause" : "Play"}
                       className="group relative"
                     >
                       <div className={`absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full blur opacity-60 group-hover:opacity-100 transition duration-300`}></div>
@@ -469,14 +619,14 @@ function App() {
                       </div>
                     </button>
 
-                    <button onClick={() => setIndex(Math.min(words.length, index + 50))} className={`p-3 rounded-full transition-all active:scale-90 ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}>
+                    <button onClick={() => setIndex(Math.min(words.length, index + 50))} aria-label="Skip forward 50 words" className={`p-3 rounded-full transition-all active:scale-90 ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}>
                       <ChevronRight size={24} />
                     </button>
                   </div>
 
                   {/* Right Actions */}
                   <div className="flex items-center gap-2 justify-end">
-                    <button onClick={() => setIndex(0)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Restart">
+                    <button onClick={() => setIndex(0)} aria-label="Restart from the beginning" className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Restart">
                       <RotateCcw size={20} />
                     </button>
                   </div>
@@ -485,7 +635,7 @@ function App() {
 
                 {/* Speed — the single most important control, so it lives right under Play */}
                 <div className="w-[80%] mx-auto mt-6">
-                  <div className="flex justify-between text-xs font-medium tracking-wider opacity-60 mb-1">
+                  <div className={`flex justify-between text-xs font-medium tracking-wider ${mutedText} mb-1`}>
                     <span>SPEED</span>
                     <span className="text-indigo-400 font-mono">{settings.wpm} WPM</span>
                   </div>
@@ -504,7 +654,7 @@ function App() {
           <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
             <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
               <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
-                Reading Presets <span className="text-xs opacity-40">▾</span>
+                Reading Presets <span className={`text-xs ${mutedText}`}>▾</span>
               </summary>
               <div className="space-y-2 mt-3">
                 {Object.values(PRESETS).map((preset) => (
@@ -518,7 +668,7 @@ function App() {
                     }`}
                   >
                     <div className="font-medium text-sm">{preset.label}</div>
-                    <div className="text-xs opacity-50">{preset.citation}</div>
+                    <div className={`text-xs ${mutedText}`}>{preset.citation}</div>
                   </button>
                 ))}
               </div>
@@ -526,10 +676,10 @@ function App() {
 
             <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
               <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
-                Appearance <span className="text-xs opacity-40">▾</span>
+                Appearance <span className={`text-xs ${mutedText}`}>▾</span>
               </summary>
               <div className="mt-3">
-                <label className="block text-xs opacity-70 mb-1">Font</label>
+                <label className={`block text-xs ${mutedText} mb-1`}>Font</label>
                 <select
                   value={appearance.fontFamily}
                   onChange={(e) => setAppearance({ ...appearance, fontFamily: e.target.value })}
@@ -539,16 +689,16 @@ function App() {
                 </select>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Size</span><span>{appearance.fontSize}px</span></div>
+                    <div className={`flex justify-between text-xs ${mutedText} mb-1`}><span>Size</span><span>{appearance.fontSize}px</span></div>
                     <input type="range" min="24" max="120" value={appearance.fontSize} onChange={(e) => setAppearance({ ...appearance, fontSize: Number(e.target.value) })} className="w-full" />
                   </div>
                   <div>
-                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Width</span><span>{appearance.containerWidth}px</span></div>
+                    <div className={`flex justify-between text-xs ${mutedText} mb-1`}><span>Width</span><span>{appearance.containerWidth}px</span></div>
                     <input type="range" min="400" max="1400" step="20" value={appearance.containerWidth} onChange={(e) => setAppearance({ ...appearance, containerWidth: Number(e.target.value) })} className="w-full" />
                   </div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1">
+                  <div className={`flex justify-between text-xs ${mutedText} mb-1`}>
                     <span>Text Color</span>
                     {appearance.textColor && <button onClick={() => setAppearance({ ...appearance, textColor: '' })} className="text-indigo-400 hover:underline">Reset to theme</button>}
                   </div>
@@ -559,7 +709,7 @@ function App() {
                       onChange={(e) => setAppearance({ ...appearance, textColor: e.target.value })}
                       className="h-9 w-14 rounded cursor-pointer bg-transparent border border-gray-500/30"
                     />
-                    <span className="text-xs opacity-50">{appearance.textColor || 'Using theme default'}</span>
+                    <span className={`text-xs ${mutedText}`}>{appearance.textColor || 'Using theme default'}</span>
                   </div>
                 </div>
               </div>
@@ -567,24 +717,24 @@ function App() {
 
             <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
               <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
-                Mechanics <span className="text-xs opacity-40">▾</span>
+                Mechanics <span className={`text-xs ${mutedText}`}>▾</span>
               </summary>
               <div className="space-y-4 mt-3">
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>Speed</span><span className="text-indigo-400 font-mono">{settings.wpm} WPM</span></div>
+                  <div className={`flex justify-between text-xs ${mutedText} mb-1`}><span>Speed</span><span className="text-indigo-400 font-mono">{settings.wpm} WPM</span></div>
                   <input type="range" min="100" max="900" step="10" value={settings.wpm} onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })} className="w-full" />
-                  <div className="text-xs opacity-40 mt-1">Or scroll over the reader above to adjust speed.</div>
+                  <div className={`text-xs ${mutedText} mt-1`}>Or scroll over the reader above to adjust speed.</div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>Chunk Size</span><span className="text-indigo-400 font-mono">{settings.chunkSize} Words</span></div>
+                  <div className={`flex justify-between text-xs ${mutedText} mb-1`}><span>Chunk Size</span><span className="text-indigo-400 font-mono">{settings.chunkSize} Words</span></div>
                   <input type="range" min="1" max="6" step="1" value={settings.chunkSize} onChange={(e) => setSettings({ ...settings, chunkSize: Number(e.target.value) })} className="w-full" />
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>ORP Pivot Position</span><span className="text-indigo-400 font-mono">{Math.round(settings.orpOffset * 100)}%</span></div>
+                  <div className={`flex justify-between text-xs ${mutedText} mb-1`}><span>ORP Pivot Position</span><span className="text-indigo-400 font-mono">{Math.round(settings.orpOffset * 100)}%</span></div>
                   <input type="range" min="0.1" max="0.9" step="0.05" value={settings.orpOffset} onChange={(e) => setSettings({ ...settings, orpOffset: Number(e.target.value) })} className="w-full" />
                 </div>
                 <div>
-                  <div className="text-xs opacity-70 mb-1">ORP Highlight Color</div>
+                  <div className={`text-xs ${mutedText} mb-1`}>ORP Highlight Color</div>
                   <div className="flex items-center gap-3">
                     <input
                       type="color"
@@ -592,7 +742,21 @@ function App() {
                       onChange={(e) => setAppearance({ ...appearance, orpColor: e.target.value })}
                       className="h-9 w-14 rounded cursor-pointer bg-transparent border border-gray-500/30"
                     />
-                    <span className="text-xs opacity-50">Red is the common convention (strongest contrast against body text); pick whatever reads best for you.</span>
+                    <span className={`text-xs ${mutedText}`}>Red is the common convention (strongest contrast against body text); pick whatever reads best for you.</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {ORP_COLOR_PRESETS.map(preset => (
+                      <button
+                        key={preset.hex}
+                        type="button"
+                        onClick={() => setAppearance({ ...appearance, orpColor: preset.hex })}
+                        title={`${preset.name} (${preset.palette} colorblind-safe palette)`}
+                        aria-label={`Use ${preset.name}, a ${preset.palette} colorblind-safe color, for the ORP highlight`}
+                        aria-pressed={appearance.orpColor === preset.hex}
+                        className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${appearance.orpColor === preset.hex ? 'ring-2 ring-offset-2 ring-indigo-500' : ''} ${isDark ? 'ring-offset-gray-900' : 'ring-offset-white'}`}
+                        style={{ backgroundColor: preset.hex }}
+                      />
+                    ))}
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
@@ -611,16 +775,16 @@ function App() {
 
             <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
               <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
-                Punctuation <span className="text-xs opacity-40">▾</span>
+                Punctuation <span className={`text-xs ${mutedText}`}>▾</span>
               </summary>
               <div className="mt-3">
-                <div className="text-xs opacity-70 mb-2">Delay multipliers for pacing.</div>
+                <div className={`text-xs ${mutedText} mb-2`}>Delay multipliers for pacing.</div>
                 <div className="space-y-1 mb-4 max-h-48 overflow-y-auto">
                   {punctuationRules.map((rule, i) => (
                     <div key={i} className={`flex justify-between items-center text-sm p-2 rounded-lg ${isDark ? 'bg-black/20' : 'bg-gray-50'}`}>
                       <span className="font-mono opacity-80">"{rule.str === "\n\n" ? "¶" : rule.str}"</span>
                       <span className="font-bold text-indigo-400">{rule.val}x</span>
-                      <button onClick={() => removePunctuationRule(i)} className="text-red-500 hover:text-red-400 font-bold px-2">×</button>
+                      <button onClick={() => removePunctuationRule(i)} aria-label={`Remove punctuation rule for "${rule.str === "\n\n" ? "paragraph break" : rule.str}"`} className="text-red-500 hover:text-red-400 font-bold px-2">×</button>
                     </div>
                   ))}
                 </div>
@@ -634,6 +798,10 @@ function App() {
           </div>
         </main>
       </div>
+
+      {/* Word-Flash Sync playback element -- kept mounted across chunk
+          transitions so onEnded can chain into the next chunk. */}
+      <audio ref={audioElRef} onTimeUpdate={handleReadAloudTimeUpdate} onEnded={handleReadAloudEnded} className="hidden" />
 
       {/* Modals */}
       {showChapterSelector && <ChapterSelector

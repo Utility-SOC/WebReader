@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { X } from 'lucide-react';
+import useDialogA11y from '../hooks/useDialogA11y';
 
-const ChapterSelector = ({ chapters, onSelect, onCancel }) => {
+const ChapterSelector = ({ chapters, onSelect, onClose }) => {
+    const dialogRef = useRef(null);
+    useDialogA11y(dialogRef, onClose);
     return (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] flex flex-col">
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="chapter-selector-title" tabIndex={-1} className="bg-white rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] flex flex-col">
                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
-                    <h2 className="font-bold text-lg">Select Start Chapter</h2>
-                    <button onClick={onCancel} className="text-gray-500 hover:text-red-500"><X size={20} /></button>
+                    <h2 id="chapter-selector-title" className="font-bold text-lg">Select Start Chapter</h2>
+                    <button onClick={onClose} aria-label="Close" className="text-gray-500 hover:text-red-500"><X size={20} /></button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2">
                     {chapters.map((chap, i) => (
