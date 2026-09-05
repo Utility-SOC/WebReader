@@ -36,6 +36,10 @@ spec:
                   app.kubernetes.io/component: backend
               topologyKey: "kubernetes.io/hostname"
       {{- end }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: worker
           image: "{{ .Values.image.backend.repository }}:{{ .Values.image.backend.tag }}"

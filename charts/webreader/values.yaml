@@ -12,14 +12,15 @@ image:
     tag: latest
     pullPolicy: IfNotPresent
 
-# NOTE: this repo does not currently publish images to a registry (no CI
-# workflow does `docker build`/`docker push`). Build and push both images
-# yourself before installing this chart, e.g.:
-#   docker build -f backend/Dockerfile -t <repo>/webreader-backend:<tag> .
-#   docker build -f frontend/Dockerfile -t <repo>/webreader-frontend:<tag> frontend/
-#   docker push <repo>/webreader-backend:<tag>
-#   docker push <repo>/webreader-frontend:<tag>
-# then set image.backend.repository/tag and image.frontend.repository/tag above.
+# .github/workflows/build-images.yml builds and pushes both images to GHCR
+# on every push to main (the defaults above already point at it). Those
+# images are private by default (pushed with the repo's own GITHUB_TOKEN) --
+# either make the ghcr.io/<owner>/webreader-backend and -frontend packages
+# public in their GitHub package settings, or create a pull secret in your
+# cluster and list it below.
+imagePullSecrets: []
+# imagePullSecrets:
+#   - name: ghcr-pull-secret
 
 backend:
   # backend/database.py uses SQLite (a single-writer file database), and
