@@ -1,0 +1,109 @@
+# Default values for the webreader chart.
+
+image:
+  # backend and worker both run backend/Dockerfile (same image as
+  # docker-compose.yml) -- they only differ by command.
+  backend:
+    repository: ghcr.io/utility-soc/webreader-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  frontend:
+    repository: ghcr.io/utility-soc/webreader-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+
+# NOTE: this repo does not currently publish images to a registry (no CI
+# workflow does `docker build`/`docker push`). Build and push both images
+# yourself before installing this chart, e.g.:
+#   docker build -f backend/Dockerfile -t <repo>/webreader-backend:<tag> .
+#   docker build -f frontend/Dockerfile -t <repo>/webreader-frontend:<tag> frontend/
+#   docker push <repo>/webreader-backend:<tag>
+#   docker push <repo>/webreader-frontend:<tag>
+# then set image.backend.repository/tag and image.frontend.repository/tag above.
+
+backend:
+  # backend/database.py uses SQLite (a single-writer file database), and
+  # backend/captioning.py's Florence-2 model cache only dedupes within one
+  # process. Do not scale this beyond 1 -- see templates/NOTES.txt.
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      # Florence-2-base (quantized) has been observed to peak around
+      # 2.3-2.6GB RSS on CPU. 4Gi leaves comfortable margin; raise this if
+      # you see the backend pod OOMKilled.
+      memory: 4Gi
+
+worker:
+  # Same SQLite/model-duplication constraint as backend -- do not scale
+  # beyond 1 replica. See templates/NOTES.txt.
+  replicaCount: 1
+  # Celery's default prefork pool forks a separate OS process per
+  # concurrency slot, and backend/captioning.py's model cache only dedupes
+  # *within* a process. At concurrency>1, each process that picks up a
+  # captioning task loads its own model copy, multiplying memory by however
+  # many slots are active. Keep this at 1 unless captioning is moved to a
+  # dedicated single-concurrency queue.
+  concurrency: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+frontend:
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 5173
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+redis:
+  image:
+    repository: redis
+    tag: alpine
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+persistence:
+  enabled: true
+  # ReadWriteOnce works with virtually any StorageClass (including
+  # single-node local-path provisioners), but only lets pods on the SAME
+  # NODE mount it concurrently. This chart adds pod affinity to keep the
+  # worker co-located with the backend when accessMode is ReadWriteOnce so
+  # they can share this volume (both need it: SQLite data, temp_uploads,
+  # layouts). If your cluster has a ReadWriteMany-capable StorageClass
+  # (e.g. NFS) and you want backend/worker schedulable on different nodes,
+  # switch this to ReadWriteMany.
+  accessMode: ReadWriteOnce
+  storageClassName: ""
+  size: 10Gi
+
+ingress:
+  enabled: false
+  className: ""
+  host: webreader.local
+  annotations: {}
+  tls: []
+
+env:
+  tesseractCmd: /usr/bin/tesseract

@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "webreader.fullname" . }}-backend
+  labels:
+    {{- include "webreader.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backend
+spec:
+  # Do not scale beyond 1 -- see values.yaml backend.replicaCount and
+  # templates/NOTES.txt (SQLite + per-process model cache constraints).
+  replicas: {{ .Values.backend.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "webreader.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "webreader.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: backend
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.image.backend.repository }}:{{ .Values.image.backend.tag }}"
+          imagePullPolicy: {{ .Values.image.backend.pullPolicy }}
+          command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: {{ include "webreader.fullname" . }}-env
+          volumeMounts:
+            - name: data
+              mountPath: /app/backend/temp_uploads
+              subPath: temp_uploads
+            - name: data
+              mountPath: /app/backend/layouts
+              subPath: layouts
+            - name: data
+              mountPath: /app/backend/data
+              subPath: data
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "webreader.fullname" . }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "webreader.fullname" . }}-backend
+  labels:
+    {{- include "webreader.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.backend.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "webreader.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: backend
+  ports:
+    - port: {{ .Values.backend.service.port }}
+      targetPort: 8000
