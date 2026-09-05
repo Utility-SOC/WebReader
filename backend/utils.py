@@ -24,8 +24,10 @@ from pytesseract import Output
 
 try:
     from .pdf_auto import build_repeated_lines, extract_page_smart
+    from .captioning import caption_image
 except ImportError:  # allow running outside package context (celery worker in /app)
     from pdf_auto import build_repeated_lines, extract_page_smart
+    from captioning import caption_image
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -248,11 +250,16 @@ def extract_text_from_pdf_range(
                                 buff = io.BytesIO()
                                 p_img.save(buff, format="PNG")
                                 b64 = base64.b64encode(buff.getvalue()).decode("utf-8")
+                                caption = caption_image(p_img)
                                 extracted_images.append({
                                     "name": img_name,
-                                    "src": f"data:image/png;base64,{b64}"
+                                    "src": f"data:image/png;base64,{b64}",
+                                    "caption": caption
                                 })
-                                extracted_text += f"\n[FIGURE: {img_name}]\n"
+                                if caption:
+                                    extracted_text += f"\n[FIGURE: {img_name} — {caption}]\n"
+                                else:
+                                    extracted_text += f"\n[FIGURE: {img_name}]\n"
                                 
                         except Exception as inner_e:
                             logger.error(f"Box process error on page {i}: {inner_e}")
@@ -407,7 +414,10 @@ def load_mobi_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
 
 def process_image_file(path: str) -> Tuple[str, List[Dict[str, Any]]]:
     """
-    Process a single image file (PNG, JPG, WEBP) and return OCR text.
+    Process a single image file (PNG, JPG, WEBP). Runs OCR for any text in
+    the image, and captions the image itself so photos/figures with no text
+    (the OCR-empty case that used to produce zero words) still yield
+    something readable.
     Returns (text, []) - no extracted images list needed for a single image usually,
     but we could return the image itself as an 'extracted image' if desired.
     """
@@ -415,7 +425,9 @@ def process_image_file(path: str) -> Tuple[str, List[Dict[str, Any]]]:
         from PIL import Image
         img = Image.open(path)
         text = extract_text_with_ocr(img)
-        return text, []
+        caption = caption_image(img)
+        combined = "\n\n".join(part.strip() for part in [caption, text] if part and part.strip())
+        return combined, []
     except Exception as e:
         logger.error(f"Image Processing Error: {e}")
         return "", []
