@@ -40,6 +40,10 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
     // Keyboard Listeners (Delete + Nudge)
     useEffect(() => {
         const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                onCancel();
+                return;
+            }
             if (selectedBoxIdx === null) return;
 
             // Delete
@@ -78,7 +82,7 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedBoxIdx, pageIdx, boxesMap]);
+    }, [selectedBoxIdx, pageIdx, boxesMap, onCancel]);
 
     // ---------------------------
     // MOUSE HANDLERS
@@ -260,27 +264,27 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
                 <div className="flex items-center gap-2">
                     <h2 className="font-bold text-lg text-blue-400 hidden sm:block">Editor</h2>
                     <div className="flex bg-gray-700 rounded p-0.5">
-                        <button onClick={prevPage} disabled={pageIdx === 0} className="px-3 py-1 hover:bg-gray-600 rounded-l disabled:opacity-50 border-r border-gray-600">
+                        <button onClick={prevPage} disabled={pageIdx === 0} aria-label="Previous page" className="px-3 py-1 hover:bg-gray-600 rounded-l disabled:opacity-50 border-r border-gray-600">
                             <ArrowLeft size={16} />
                         </button>
                         <span className="px-3 py-1 font-mono text-sm flex items-center bg-gray-600">Page {pageIdx + 1} / {pageCount}</span>
-                        <button onClick={nextPage} disabled={pageIdx === pageCount - 1} className="px-3 py-1 hover:bg-gray-600 rounded-r disabled:opacity-50">
+                        <button onClick={nextPage} disabled={pageIdx === pageCount - 1} aria-label="Next page" className="px-3 py-1 hover:bg-gray-600 rounded-r disabled:opacity-50">
                             <ArrowRight size={16} />
                         </button>
                     </div>
                 </div>
 
                 <div className="flex gap-2 items-center overflow-x-auto">
-                    <button onClick={() => setTool('text')} title="Text Query" className={`p-2 rounded ${tool === 'text' ? 'bg-blue-600 ring-1 ring-white' : 'bg-gray-700'}`}>
+                    <button onClick={() => setTool('text')} title="Text Query" aria-label="Text box tool" aria-pressed={tool === 'text'} className={`p-2 rounded ${tool === 'text' ? 'bg-blue-600 ring-1 ring-white' : 'bg-gray-700'}`}>
                         <Type size={20} />
                     </button>
-                    <button onClick={() => setTool('image')} title="Image Extraction" className={`p-2 rounded ${tool === 'image' ? 'bg-orange-600 ring-1 ring-white' : 'bg-gray-700'}`}>
+                    <button onClick={() => setTool('image')} title="Image Extraction" aria-label="Image box tool" aria-pressed={tool === 'image'} className={`p-2 rounded ${tool === 'image' ? 'bg-orange-600 ring-1 ring-white' : 'bg-gray-700'}`}>
                         <ImageIcon size={20} />
                     </button>
-                    <button onClick={() => setFitWidth(!fitWidth)} className={`p-2 rounded bg-gray-700 text-xs font-bold w-12`}>{fitWidth ? 'FIT' : '1:1'}</button>
+                    <button onClick={() => setFitWidth(!fitWidth)} aria-label={fitWidth ? "Switch to actual size" : "Switch to fit width"} className={`p-2 rounded bg-gray-700 text-xs font-bold w-12`}>{fitWidth ? 'FIT' : '1:1'}</button>
 
                     {selectedBoxIdx !== null ? (
-                        <button onClick={deleteSelectedBox} className="p-2 bg-red-600 rounded">
+                        <button onClick={deleteSelectedBox} aria-label="Delete selected box" className="p-2 bg-red-600 rounded">
                             <Trash2 size={20} />
                         </button>
                     ) : (
@@ -320,7 +324,7 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
             </div>
 
             <div className="flex-1 overflow-auto bg-gray-500 flex justify-center p-2 sm:p-4 cursor-default">
-                <div className="relative shadow-2xl bg-white select-none box-default outline-none"
+                <div className="relative shadow-2xl bg-white select-none box-default"
                     style={{
                         alignSelf: 'flex-start',
                         width: fitWidth ? '100%' : 'auto',

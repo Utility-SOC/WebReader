@@ -36,3 +36,31 @@ h6 {
 ::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
 }
+
+/* Visible keyboard-focus ring everywhere -- components rely on this instead
+   of ad-hoc `outline-none` + custom styling, so removing an outline-none
+   class never silently drops focus visibility. */
+:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Skip-to-content link: visually hidden until it receives keyboard focus,
+   so Tab-only users don't have to walk through the header on every page. */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 1rem;
+  z-index: 100;
+  padding: 0.75rem 1.25rem;
+  background: #6366f1;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 0 0 0.5rem 0.5rem;
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus {
+  top: 0;
+}

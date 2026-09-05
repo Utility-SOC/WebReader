@@ -1,7 +1,11 @@
 import React from 'react';
 
 const RSVPDisplay = ({ words, index, settings, appearance, isDark, images }) => {
-    if (!words || words.length === 0) return <div className="text-center p-10 opacity-50">Upload a file to begin</div>;
+    // Same contrast fix as App.jsx's mutedText: solid gray instead of alpha
+    // blending, so the peripheral (non-pivot) word text stays above 4.5:1.
+    const mutedText = isDark ? "text-gray-400" : "text-gray-600";
+
+    if (!words || words.length === 0) return <div className={`text-center p-10 ${mutedText}`}>Upload a file to begin</div>;
 
     const currentItem = words[index];
     const isFigure = currentItem && currentItem.startsWith("[FIGURE:");
@@ -62,12 +66,12 @@ const RSVPDisplay = ({ words, index, settings, appearance, isDark, images }) => 
                 </>
             )}
             <div className="flex items-baseline w-full justify-center text-center relative z-10 px-4">
-                <div className="flex-1 text-right opacity-60 font-medium whitespace-pre">{settings.bionicBolding ? applyBionic(processed.left) : processed.left}</div>
+                <div className={`flex-1 text-right ${mutedText} font-medium whitespace-pre`}>{settings.bionicBolding ? applyBionic(processed.left) : processed.left}</div>
                 <div
                     className="mx-1 font-bold transform transition-transform duration-75"
                     style={processed.isPivot ? { color: appearance.orpColor || '#ef4444', transform: 'scale(1.1)' } : undefined}
                 >{processed.center}</div>
-                <div className="flex-1 text-left opacity-60 font-medium whitespace-pre">{settings.bionicBolding ? applyBionic(processed.right) : processed.right}</div>
+                <div className={`flex-1 text-left ${mutedText} font-medium whitespace-pre`}>{settings.bionicBolding ? applyBionic(processed.right) : processed.right}</div>
             </div>
         </div>
     );

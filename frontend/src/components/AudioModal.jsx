@@ -1,7 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Mic, Download } from 'lucide-react';
+import useDialogA11y from '../hooks/useDialogA11y';
 
 const AudioModal = ({ filename, pageCount, manualBoxes, onCancel }) => {
+    const dialogRef = useRef(null);
+    useDialogA11y(dialogRef, onCancel);
     const [voices, setVoices] = useState([]);
     const [loadingVoices, setLoadingVoices] = useState(true);
     const [selectedVoice, setSelectedVoice] = useState("");
@@ -83,22 +86,22 @@ const AudioModal = ({ filename, pageCount, manualBoxes, onCancel }) => {
 
     return (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex items-center justify-center p-4">
-            <div className="bg-gray-800 text-white rounded-lg shadow-2xl max-w-md w-full border border-gray-700 font-sans">
+            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="audio-modal-title" tabIndex={-1} className="bg-gray-800 text-white rounded-lg shadow-2xl max-w-md w-full border border-gray-700 font-sans">
                 <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-                    <h2 className="font-bold text-lg flex items-center gap-2"><Mic size={20} /> Audio Options</h2>
-                    <button onClick={onCancel} className="text-gray-400 hover:text-white"><X size={20} /></button>
+                    <h2 id="audio-modal-title" className="font-bold text-lg flex items-center gap-2"><Mic size={20} /> Audio Options</h2>
+                    <button onClick={onCancel} aria-label="Close" className="text-gray-400 hover:text-white"><X size={20} /></button>
                 </div>
                 <div className="p-6 space-y-4">
                     {/* Voice Selector */}
                     <div>
                         <label className="block text-sm font-bold mb-1 text-gray-400">Select Voice</label>
                         {loadingVoices ? (
-                            <div className="text-sm opacity-50">Loading voices...</div>
+                            <div className="text-sm text-gray-400">Loading voices...</div>
                         ) : (
                             <select
                                 value={selectedVoice}
                                 onChange={(e) => setSelectedVoice(e.target.value)}
-                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500 outline-none"
+                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500"
                             >
                                 {voices.map(v => (
                                     <option key={v.id} value={v.id}>{v.name} ({v.lang})</option>
@@ -117,7 +120,7 @@ const AudioModal = ({ filename, pageCount, manualBoxes, onCancel }) => {
                                 max={pageCount || 9999}
                                 value={startPage}
                                 onChange={(e) => setStartPage(e.target.value)}
-                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500 outline-none"
+                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500"
                             />
                         </div>
                         <div>
@@ -128,7 +131,7 @@ const AudioModal = ({ filename, pageCount, manualBoxes, onCancel }) => {
                                 max={pageCount || 9999}
                                 value={endPage}
                                 onChange={(e) => setEndPage(e.target.value)}
-                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500 outline-none"
+                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500"
                             />
                         </div>
                     </div>
