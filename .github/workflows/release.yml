@@ -105,6 +105,14 @@ jobs:
           OCR is powered by bundled Tesseract OCR (Apache License 2.0).
           See the THIRD_PARTY_LICENSES folder for license texts.
 
+          Image captioning (AI-generated descriptions for photos/figures
+          with no text) is optional and not included in this desktop build
+          -- it needs heavy ML dependencies (PyTorch, ~500MB+) that aren't
+          bundled here to keep this download small. Images still get OCR'd
+          normally; only the AI description is skipped. It's available in
+          the Docker/server deployment (see the project README) if you want
+          it.
+
           Note: Windows SmartScreen may warn about an unsigned app the first
           time; choose 'More info' -> 'Run anyway'.
           "@
