@@ -10,6 +10,7 @@ A modern web application for speed reading PDFs, EPUBs, and Images using RSVP (R
 - **Smart Automatic PDF Import**: Detects multi-column layouts (correct reading order), strips repeated headers/footers and standalone page numbers, and repairs words hyphenated across line breaks.
 - **Format Support**: PDF, EPUB, TXT, DOCX, and **Images** (.png, .jpg, .webp).
 - **OCR Integration**: Automatically extracts text from scanned PDFs and images using Tesseract.
+- **AI Image Captioning** *(Docker/Kubernetes only, optional)*: Photos and figures with no embedded text get an AI-generated description (via Florence-2) woven into the text WebReader reads and speaks, instead of being skipped entirely. Not included in the desktop build — see [Installation](#installation).
 - **Text-to-Speech (TTS)**: Generate and download an MP3/WAV audio version of your document.
 - **Manual Layout Editor**: Select specific text boxes to read on PDF files, skipping headers/footers.
 - **Modern UI**: Clean, glassmorphism-based design with Dark Mode support.
@@ -17,20 +18,24 @@ A modern web application for speed reading PDFs, EPUBs, and Images using RSVP (R
 
 ## Installation
 
-### Prerequisites
+There are three ways to run WebReader, depending on what you need. All three read/write the same document formats; they differ in setup effort and whether AI image captioning is included.
 
-- Python 3.9+, Node.js, Redis, and Tesseract OCR
+| | Desktop / Local | Docker Compose | Kubernetes |
+|---|---|---|---|
+| Setup effort | One script | One command | Helm chart |
+| AI Image Captioning | Not included | Included | Included |
+| Best for | Trying it out, personal use | A machine you leave running (homelab, NAS) | A cluster / always-on deployment |
 
-### 1. Clone the Repository
+### Option 1: Desktop / Local (Lightweight)
+
+No AI image captioning (see the Features table above) — everything else works the same. This is the path the Windows desktop `.exe` release also uses.
+
+**Prerequisites**: Python 3.9+, Node.js, Redis, and Tesseract OCR.
 
 ```bash
 git clone https://github.com/Utility-SOC/WebReader.git
 cd WebReader
 ```
-
-## Running the Application
-
-We've provided automated startup scripts to install dependencies and launch all necessary services (Backend, Frontend, and Celery Worker).
 
 **For Windows:**
 ```powershell
@@ -49,7 +54,59 @@ chmod +x run_linux.sh
 
 *Note: Ensure Redis is running in the background before launching the application.*
 
-*Note: image captioning (AI-generated descriptions for photos/figures with no text) is optional and not included in the desktop build or `run_linux.sh`/`run_windows` setup -- it needs heavy ML dependencies (PyTorch, ~500MB+) that are deliberately left out of `requirements.txt` to keep those installs light. Images are still OCR'd normally either way; only the AI description is skipped. It's available in the Docker/server deployment (`backend/requirements.txt`, `docker-compose.yml`) if you want it.*
+### Option 2: Docker Compose (adds AI Image Captioning)
+
+Runs the full stack in containers — FastAPI backend, Celery worker, Redis, and the frontend dev server — and is the only path that includes AI image captioning. That feature needs ~500MB+ of ML dependencies (PyTorch/transformers) that Option 1 deliberately skips to stay lightweight.
+
+**Prerequisites**: Docker and Docker Compose.
+
+```bash
+git clone https://github.com/Utility-SOC/WebReader.git
+cd WebReader
+
+# Size the backend/worker memory cap to this machine's RAM (writes .env).
+# Re-run this if you move to different hardware.
+./scripts/detect-ml-mem-limit.sh
+
+docker compose up -d
+```
+
+Open http://localhost:5173 (the backend API is on :8000 — `/health` for a quick check).
+
+Captioning runs on CPU only (no GPU support) and has been tuned for
+low-memory hosts; see the module docstring in `backend/captioning.py` for
+the specifics if you're curious or troubleshooting a captioning-related
+crash. If a container gets killed under memory pressure, raise the limit
+`scripts/detect-ml-mem-limit.sh` wrote to `.env` (`ML_MEM_LIMIT`).
+
+### Option 3: Kubernetes (Helm chart)
+
+For a persistent, always-on deployment. See `charts/webreader/` — its
+`values.yaml` and the `NOTES.txt` shown after install document the setup in
+detail, including why backend and worker must stay at exactly 1 replica
+(the app uses SQLite) and how memory limits are sized.
+
+```bash
+helm install webreader charts/webreader
+```
+
+Images are built and published to GHCR automatically on every push to
+`main` (`.github/workflows/build-images.yml`); the chart's defaults already
+point at them.
+
+## Configuration
+
+Environment variables the backend/worker read (already set correctly by
+`docker-compose.yml` and the Helm chart; only relevant if you're running
+things manually or debugging):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CELERY_BROKER_URL` | `redis://localhost:6379/0` | Redis connection for the Celery task queue |
+| `TESSERACT_CMD` | auto-detected | Path to the `tesseract` binary, if it's not on `PATH` |
+| `WEBREADER_EMBEDDED` | unset | Set to `1` to run Celery tasks in-process with no Redis/worker needed (used by the desktop build) |
+| `WEBREADER_DATA_DIR` | next to the source | Where the desktop app stores its SQLite database and settings |
+| `ML_MEM_LIMIT` | `4g` | Docker Compose only — memory cap for the backend/worker containers; auto-written to `.env` by `scripts/detect-ml-mem-limit.sh` |
 
 ## Basic Tutorial
 
@@ -124,10 +181,16 @@ The primary interface provides several ways to tailor WebReader to your cognitiv
 
 - **Upload Stuck?**: Ensure the worker process started correctly from the launch script. The API delegates heavy processing to Celery.
 - **OCR Failed?**: Ensure `tesseract` is installed and in your system PATH.
+- **No AI image captions?**: Expected on the desktop build / `run_linux.sh` / `run_windows` (see Installation) — images still get OCR'd normally either way. On Docker/Kubernetes, check the backend/worker logs for `Image captioning disabled: ...`, which means the ML dependencies didn't install correctly.
+- **Backend or worker container OOMKilled (Docker)?**: Raise `ML_MEM_LIMIT` in `.env` (regenerate it with `./scripts/detect-ml-mem-limit.sh`, or edit it directly) and restart with `docker compose up -d`.
+- **Docker build failing after pulling changes?**: Rebuild explicitly with `docker compose up -d --build` — Compose doesn't always detect that `backend/Dockerfile` or `requirements.txt` changed.
 
 ## License
 
 WebReader is MIT licensed (see `LICENSE`).
+
+See `AI_DISCLOSURE.md` for a note on AI-assisted contributions to this
+project's code, docs, and deployment configuration.
 
 The desktop build bundles [Tesseract OCR](https://github.com/tesseract-ocr/tesseract)
 (Apache License 2.0) and its Leptonica dependency for built-in OCR. License
