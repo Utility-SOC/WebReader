@@ -1,15 +1,19 @@
-version: '3.8'
-
 services:
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     ports:
       - "8000:8000"
+    # /process_pdf (manual-box image captioning) runs synchronously in this
+    # container and loads the Florence captioning model, same as worker
+    # below -- same cap, same rationale (see worker's comment).
+    mem_limit: ${ML_MEM_LIMIT:-4g}
     volumes:
-      - ./backend:/app
-      - ./temp_uploads:/app/temp_uploads
-      - ./layouts:/app/layouts
-      - ./data:/app/data
+      - ./backend:/app/backend
+      - ./temp_uploads:/app/backend/temp_uploads
+      - ./layouts:/app/backend/layouts
+      - ./data:/app/backend/data
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - TESSERACT_CMD=/usr/bin/tesseract
@@ -17,13 +21,33 @@ services:
       - redis
 
   worker:
-    build: ./backend
-    command: celery -A celery_app worker --loglevel=info
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    # --concurrency=1: Celery's default prefork pool forks a separate OS
+    # process per worker slot, and backend/captioning.py's model cache only
+    # dedupes *within* a process. At concurrency>1, each forked process that
+    # picks up a captioning task loads its own ~2.3GB model copy -- at the
+    # previous default of 4, that's up to ~9GB, which blows past mem_limit
+    # below and defeats the whole point of capping it. Concurrency 1 keeps
+    # this at one model copy no matter what, at the cost of serializing all
+    # worker tasks (not just captioning). If that throughput cost matters,
+    # the real fix is routing captioning to its own single-concurrency queue
+    # so regular PDF/OCR tasks keep parallelizing.
+    command: celery -A backend.celery_app worker --loglevel=info --concurrency=1
+    # Image captioning (Florence-2) runs in this container. It's been tuned
+    # to hold around ~2.3GB RSS, but this cap is a backstop: if a task ever
+    # runs away, Docker recycles this container instead of the host OOM
+    # killer taking down the whole machine (see backend/captioning.py).
+    # Sized automatically to this machine's RAM by scripts/detect-ml-mem-limit.sh
+    # (run once, or after moving to different hardware); 4g is the fallback
+    # if that hasn't been run.
+    mem_limit: ${ML_MEM_LIMIT:-4g}
     volumes:
-      - ./backend:/app
-      - ./temp_uploads:/app/temp_uploads
-      - ./layouts:/app/layouts
-      - ./data:/app/data
+      - ./backend:/app/backend
+      - ./temp_uploads:/app/backend/temp_uploads
+      - ./layouts:/app/backend/layouts
+      - ./data:/app/backend/data
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - TESSERACT_CMD=/usr/bin/tesseract

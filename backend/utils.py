@@ -24,8 +24,10 @@ from pytesseract import Output
 
 try:
     from .pdf_auto import build_repeated_lines, extract_page_smart
+    from .captioning import caption_image
 except ImportError:  # allow running outside package context (celery worker in /app)
     from pdf_auto import build_repeated_lines, extract_page_smart
+    from captioning import caption_image
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -248,11 +250,16 @@ def extract_text_from_pdf_range(
                                 buff = io.BytesIO()
                                 p_img.save(buff, format="PNG")
                                 b64 = base64.b64encode(buff.getvalue()).decode("utf-8")
+                                caption = caption_image(p_img)
                                 extracted_images.append({
                                     "name": img_name,
-                                    "src": f"data:image/png;base64,{b64}"
+                                    "src": f"data:image/png;base64,{b64}",
+                                    "caption": caption
                                 })
-                                extracted_text += f"\n[FIGURE: {img_name}]\n"
+                                if caption:
+                                    extracted_text += f"\n[FIGURE: {img_name} — {caption}]\n"
+                                else:
+                                    extracted_text += f"\n[FIGURE: {img_name}]\n"
                                 
                         except Exception as inner_e:
                             logger.error(f"Box process error on page {i}: {inner_e}")
@@ -262,6 +269,31 @@ def extract_text_from_pdf_range(
         raise e
         
     return extracted_text, extracted_images
+
+_PAGE_MARKER_TEXT_RE = re.compile(r'^[ivxlcdm0-9\-\.]{1,8}$', re.IGNORECASE)
+
+def _strip_epub_page_markers(soup) -> None:
+    """
+    Remove EPUB page-break/page-number markers so they don't end up as stray
+    tokens in the extracted reading text. EPUB3 marks these with
+    epub:type="pagebreak" (sometimes carrying the page number as the
+    element's visible text, e.g. <span epub:type="pagebreak">14</span>);
+    older/Calibre-generated EPUBs typically use a class or id containing
+    "page" instead, with the page number as the element's only content.
+    """
+    for tag in soup.find_all(True):
+        epub_type = tag.get('epub:type') or tag.get('{http://www.idpf.org/2007/ops}type') or ''
+        classes = ' '.join(tag.get('class') or [])
+        marker_hint = f"{epub_type} {classes} {tag.get('id') or ''}".lower()
+
+        if 'pagebreak' in marker_hint or 'page-break' in marker_hint:
+            tag.decompose()
+            continue
+
+        if 'page' in marker_hint:
+            text = tag.get_text(strip=True)
+            if text and _PAGE_MARKER_TEXT_RE.match(text):
+                tag.decompose()
 
 def load_epub_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
     """
@@ -323,7 +355,8 @@ def load_epub_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
                     from bs4 import BeautifulSoup
                     soup = BeautifulSoup(html, "html.parser")
                     for tag in soup(["script", "style"]): tag.decompose()
-                    
+                    _strip_epub_page_markers(soup)
+
                     chapter_text = soup.get_text(separator=' ', strip=True) + "\n\n"
                     if not chapter_text.strip(): continue
 
@@ -381,7 +414,10 @@ def load_mobi_manual(path: str) -> Tuple[str, List[Dict[str, Any]]]:
 
 def process_image_file(path: str) -> Tuple[str, List[Dict[str, Any]]]:
     """
-    Process a single image file (PNG, JPG, WEBP) and return OCR text.
+    Process a single image file (PNG, JPG, WEBP). Runs OCR for any text in
+    the image, and captions the image itself so photos/figures with no text
+    (the OCR-empty case that used to produce zero words) still yield
+    something readable.
     Returns (text, []) - no extracted images list needed for a single image usually,
     but we could return the image itself as an 'extracted image' if desired.
     """
@@ -389,7 +425,9 @@ def process_image_file(path: str) -> Tuple[str, List[Dict[str, Any]]]:
         from PIL import Image
         img = Image.open(path)
         text = extract_text_with_ocr(img)
-        return text, []
+        caption = caption_image(img)
+        combined = "\n\n".join(part.strip() for part in [caption, text] if part and part.strip())
+        return combined, []
     except Exception as e:
         logger.error(f"Image Processing Error: {e}")
         return "", []

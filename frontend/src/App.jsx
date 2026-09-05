@@ -6,9 +6,19 @@ import PdfManualEditor from './components/PdfManualEditor';
 import ImageGallery from './components/ImageGallery';
 import ChapterSelector from './components/ChapterSelector';
 import AudioModal from './components/AudioModal';
-import SettingsModal from './components/SettingsModal';
-import { Settings, Play, Pause, RotateCcw, Image, BookOpen, Volume2, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
-import { PRESETS } from './constants';
+import { Play, Pause, RotateCcw, Image, BookOpen, Volume2, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
+import { PRESETS, FONTS } from './constants';
+
+const PREFS_KEY = "webreader:preferences:v1";
+
+const loadPrefs = () => {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
 
 function App() {
   const [words, setWords] = useState([]);
@@ -21,14 +31,20 @@ function App() {
   const [statusMessage, setStatusMessage] = useState("");
   const [currentFile, setCurrentFile] = useState(null); // Track filename
 
+  const savedPrefs = useRef(loadPrefs()).current;
+
   // Settings
-  const [settings, setSettings] = useState(PRESETS.orp_focused.config);
+  const [settings, setSettings] = useState(savedPrefs.settings || PRESETS.orp_focused.config);
+  const [activePresetId, setActivePresetId] = useState(savedPrefs.activePresetId || 'orp_focused');
 
   // Appearance
   const [appearance, setAppearance] = useState({
     fontSize: 60,
     fontFamily: "'Courier New', monospace",
-    containerWidth: 1024
+    containerWidth: 1024,
+    orpColor: '#ef4444',
+    textColor: '',
+    ...savedPrefs.appearance
   });
 
   const timerRef = useRef(null);
@@ -38,13 +54,12 @@ function App() {
   // Chapter Selection State
   const [chapters, setChapters] = useState([]);
   const [showChapterSelector, setShowChapterSelector] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [showAudioModal, setShowAudioModal] = useState(false);
   const [manualBoxes, setManualBoxes] = useState(null);
 
   // Dynamic Punctuation State
-  const [punctuationRules, setPunctuationRules] = useState([
+  const [punctuationRules, setPunctuationRules] = useState(savedPrefs.punctuationRules || [
     { str: ".", val: 2.0 },
     { str: ",", val: 1.5 },
     { str: ";", val: 1.5 },
@@ -54,7 +69,55 @@ function App() {
     { str: "\n\n", val: 3.0 }
   ]);
 
+  // Persist reading/appearance preferences across reloads
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ settings, appearance, punctuationRules, activePresetId }));
+    } catch { /* localStorage unavailable (private mode, etc.) — settings just won't persist */ }
+  }, [settings, appearance, punctuationRules, activePresetId]);
+
+  const applyPreset = (id) => {
+    setActivePresetId(id);
+    setSettings(PRESETS[id].config);
+  };
+
+  // Quick punctuation-equalizer form (main-screen panel)
+  const [newRuleStr, setNewRuleStr] = useState("");
+  const [newRuleVal, setNewRuleVal] = useState(1.5);
+  const addPunctuationRule = () => {
+    if (!newRuleStr) return;
+    setPunctuationRules(prev => [...prev, { str: newRuleStr, val: Number(newRuleVal) }]);
+    setNewRuleStr("");
+    setNewRuleVal(1.5);
+  };
+  const removePunctuationRule = (idx) => {
+    setPunctuationRules(prev => prev.filter((_, i) => i !== idx));
+  };
+
   // Handler for file upload
+  // Tab title reflects the loaded file (no book-title metadata is extracted
+  // server-side, so the filename minus extension is the closest proxy)
+  useEffect(() => {
+    document.title = currentFile ? currentFile.replace(/\.[^.]+$/, '') : 'WebReader';
+  }, [currentFile]);
+
+  // Return to the upload screen to load a different file (or redo the current
+  // one with the other extraction mode — automatic vs. manual — since that
+  // choice is only offered at upload time).
+  const resetToUpload = () => {
+    setWords([]);
+    setImages([]);
+    setChapters([]);
+    setIndex(0);
+    setIsPlaying(false);
+    setLoading(false);
+    setTaskId(null);
+    setStatusMessage("");
+    setCurrentFile(null);
+    setTempFile(null);
+    setManualBoxes(null);
+  };
+
   const handleUpload = async (e) => {
     const selected = e.target.files[0];
     if (!selected) return;
@@ -121,7 +184,7 @@ function App() {
           const data = await res.json();
 
           if (data.status === "processing") {
-            setStatusMessage("Processing PDF... This may take a moment.");
+            setStatusMessage("Processing document... This may take a moment.");
           } else if (data.status === "completed") {
             setWords(data.result.words || []);
             setImages(data.result.images || []);
@@ -145,6 +208,35 @@ function App() {
     }
     return () => clearInterval(interval);
   }, [loading, taskId]);
+
+  // Spacebar Play/Pause
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (showEditor) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        setIsPlaying(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showEditor]);
+
+  // Mouse Wheel Speed Control — scroll over the reader to speed up/slow down
+  const readerCardRef = useRef(null);
+  useEffect(() => {
+    const el = readerCardRef.current;
+    if (!el || showEditor) return;
+    const handleWheel = (e) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 10 : -10;
+      setSettings(prev => ({ ...prev, wpm: Math.max(100, Math.min(1000, prev.wpm + delta)) }));
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [showEditor]);
 
   const handleManualFinish = async (boxesMap, startPage = 1) => {
     setShowEditor(false);
@@ -247,7 +339,6 @@ function App() {
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight">WebReader</h1>
-              <p className={`text-xs font-medium tracking-wide uppercase opacity-50 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Scientific Speed Reading</p>
             </div>
           </div>
 
@@ -255,16 +346,13 @@ function App() {
             <button onClick={() => setIsDark(!isDark)} className={`p-3 rounded-full transition-all duration-300 ${isDark ? 'hover:bg-gray-800 text-yellow-400' : 'bg-white hover:bg-gray-100 text-gray-600 shadow-sm border border-gray-100'}`}>
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <button onClick={() => setShowSettings(true)} className={`p-3 rounded-full transition-all duration-300 ${isDark ? 'hover:bg-gray-800 text-gray-300 hover:text-white' : 'bg-white hover:bg-gray-100 text-gray-600 shadow-sm border border-gray-100'}`}>
-              <Settings size={20} />
-            </button>
           </div>
         </header>
 
         {/* Main Interface */}
         <main className="w-full flex-1 flex flex-col items-center justify-center gap-8 w-full max-w-5xl">
 
-          <div className={`w-full relative rounded-[2.5rem] overflow-hidden backdrop-blur-xl border transition-all duration-500 ${cardClasses}`}>
+          <div ref={readerCardRef} className={`w-full relative rounded-[2.5rem] overflow-hidden backdrop-blur-xl border transition-all duration-500 ${cardClasses}`}>
 
             {/* Content Area */}
             <div className="min-h-[500px] flex flex-col items-center justify-center p-8 sm:p-12 relative">
@@ -285,11 +373,11 @@ function App() {
               ) : words.length === 0 ? (
                 <div className="text-center space-y-8 max-w-lg mx-auto animate-in zoom-in-95 duration-500">
                   <div className="space-y-4">
-                    <h2 className={`text-4xl sm:text-5xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                      Read Faster. <br /> <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">Learn More.</span>
+                    <h2 className={`text-2xl font-semibold tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                      No document loaded
                     </h2>
                     <p className={`text-lg ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
-                      Upload your documents to experience improved comprehension with RSVP technology.
+                      Upload a file to begin reading.
                     </p>
                   </div>
 
@@ -339,6 +427,9 @@ function App() {
 
                   {/* Left Actions */}
                   <div className="flex items-center gap-2 justify-start">
+                    <button onClick={resetToUpload} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Load a Different File">
+                      <UploadCloud size={20} />
+                    </button>
                     <button onClick={() => setShowChapterSelector(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Chapters">
                       <BookOpen size={20} />
                     </button>
@@ -391,20 +482,160 @@ function App() {
                   </div>
 
                 </div>
+
+                {/* Speed — the single most important control, so it lives right under Play */}
+                <div className="w-[80%] mx-auto mt-6">
+                  <div className="flex justify-between text-xs font-medium tracking-wider opacity-60 mb-1">
+                    <span>SPEED</span>
+                    <span className="text-indigo-400 font-mono">{settings.wpm} WPM</span>
+                  </div>
+                  <input
+                    type="range" min="100" max="900" step="10"
+                    value={settings.wpm}
+                    onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })}
+                    className="w-full h-2 accent-indigo-500 cursor-pointer"
+                  />
+                </div>
               </div>
             )}
+          </div>
+
+          {/* Settings — all on the front page, each pane collapsible */}
+          <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
+            <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
+              <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                Reading Presets <span className="text-xs opacity-40">▾</span>
+              </summary>
+              <div className="space-y-2 mt-3">
+                {Object.values(PRESETS).map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => applyPreset(preset.id)}
+                    className={`w-full text-left p-3 rounded-xl transition-all border ${
+                      activePresetId === preset.id
+                        ? (isDark ? 'border-indigo-500 bg-indigo-500/10' : 'border-indigo-400 bg-indigo-50')
+                        : (isDark ? 'border-transparent hover:bg-white/5' : 'border-transparent hover:bg-gray-50')
+                    }`}
+                  >
+                    <div className="font-medium text-sm">{preset.label}</div>
+                    <div className="text-xs opacity-50">{preset.citation}</div>
+                  </button>
+                ))}
+              </div>
+            </details>
+
+            <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
+              <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                Appearance <span className="text-xs opacity-40">▾</span>
+              </summary>
+              <div className="mt-3">
+                <label className="block text-xs opacity-70 mb-1">Font</label>
+                <select
+                  value={appearance.fontFamily}
+                  onChange={(e) => setAppearance({ ...appearance, fontFamily: e.target.value })}
+                  className={`w-full p-2 rounded-lg border text-sm mb-4 ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}
+                >
+                  {FONTS.map(f => <option key={f.name} value={f.family}>{f.label}</option>)}
+                </select>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Size</span><span>{appearance.fontSize}px</span></div>
+                    <input type="range" min="24" max="120" value={appearance.fontSize} onChange={(e) => setAppearance({ ...appearance, fontSize: Number(e.target.value) })} className="w-full" />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Width</span><span>{appearance.containerWidth}px</span></div>
+                    <input type="range" min="400" max="1400" step="20" value={appearance.containerWidth} onChange={(e) => setAppearance({ ...appearance, containerWidth: Number(e.target.value) })} className="w-full" />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs opacity-70 mb-1">
+                    <span>Text Color</span>
+                    {appearance.textColor && <button onClick={() => setAppearance({ ...appearance, textColor: '' })} className="text-indigo-400 hover:underline">Reset to theme</button>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={appearance.textColor || (isDark ? '#f3f4f6' : '#111827')}
+                      onChange={(e) => setAppearance({ ...appearance, textColor: e.target.value })}
+                      className="h-9 w-14 rounded cursor-pointer bg-transparent border border-gray-500/30"
+                    />
+                    <span className="text-xs opacity-50">{appearance.textColor || 'Using theme default'}</span>
+                  </div>
+                </div>
+              </div>
+            </details>
+
+            <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
+              <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                Mechanics <span className="text-xs opacity-40">▾</span>
+              </summary>
+              <div className="space-y-4 mt-3">
+                <div>
+                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>Speed</span><span className="text-indigo-400 font-mono">{settings.wpm} WPM</span></div>
+                  <input type="range" min="100" max="900" step="10" value={settings.wpm} onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })} className="w-full" />
+                  <div className="text-xs opacity-40 mt-1">Or scroll over the reader above to adjust speed.</div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>Chunk Size</span><span className="text-indigo-400 font-mono">{settings.chunkSize} Words</span></div>
+                  <input type="range" min="1" max="6" step="1" value={settings.chunkSize} onChange={(e) => setSettings({ ...settings, chunkSize: Number(e.target.value) })} className="w-full" />
+                </div>
+                <div>
+                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>ORP Pivot Position</span><span className="text-indigo-400 font-mono">{Math.round(settings.orpOffset * 100)}%</span></div>
+                  <input type="range" min="0.1" max="0.9" step="0.05" value={settings.orpOffset} onChange={(e) => setSettings({ ...settings, orpOffset: Number(e.target.value) })} className="w-full" />
+                </div>
+                <div>
+                  <div className="text-xs opacity-70 mb-1">ORP Highlight Color</div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={appearance.orpColor}
+                      onChange={(e) => setAppearance({ ...appearance, orpColor: e.target.value })}
+                      className="h-9 w-14 rounded cursor-pointer bg-transparent border border-gray-500/30"
+                    />
+                    <span className="text-xs opacity-50">Red is the common convention (strongest contrast against body text); pick whatever reads best for you.</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  <label className={`flex items-center gap-2 cursor-pointer select-none p-2.5 rounded-lg text-sm ${isDark ? 'bg-black/20 hover:bg-black/30' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                    <input type="checkbox" checked={settings.guideLines} onChange={e => setSettings({ ...settings, guideLines: e.target.checked })} /> Guide Lines
+                  </label>
+                  <label className={`flex items-center gap-2 cursor-pointer select-none p-2.5 rounded-lg text-sm ${isDark ? 'bg-black/20 hover:bg-black/30' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                    <input type="checkbox" checked={settings.bionicBolding} onChange={e => setSettings({ ...settings, bionicBolding: e.target.checked })} /> Bionic Bolding
+                  </label>
+                  <label className={`flex items-center gap-2 cursor-pointer select-none p-2.5 rounded-lg text-sm ${isDark ? 'bg-black/20 hover:bg-black/30' : 'bg-gray-50 hover:bg-gray-100'}`}>
+                    <input type="checkbox" checked={settings.orpCentering} onChange={e => setSettings({ ...settings, orpCentering: e.target.checked })} /> Force ORP Centering
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
+              <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
+                Punctuation <span className="text-xs opacity-40">▾</span>
+              </summary>
+              <div className="mt-3">
+                <div className="text-xs opacity-70 mb-2">Delay multipliers for pacing.</div>
+                <div className="space-y-1 mb-4 max-h-48 overflow-y-auto">
+                  {punctuationRules.map((rule, i) => (
+                    <div key={i} className={`flex justify-between items-center text-sm p-2 rounded-lg ${isDark ? 'bg-black/20' : 'bg-gray-50'}`}>
+                      <span className="font-mono opacity-80">"{rule.str === "\n\n" ? "¶" : rule.str}"</span>
+                      <span className="font-bold text-indigo-400">{rule.val}x</span>
+                      <button onClick={() => removePunctuationRule(i)} className="text-red-500 hover:text-red-400 font-bold px-2">×</button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input placeholder="String" value={newRuleStr} onChange={e => setNewRuleStr(e.target.value)} className={`w-20 p-2 text-sm rounded-lg border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`} />
+                  <input type="number" step="0.1" value={newRuleVal} onChange={e => setNewRuleVal(e.target.value)} className={`w-16 p-2 text-sm rounded-lg border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`} />
+                  <button onClick={addPunctuationRule} className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold">ADD</button>
+                </div>
+              </div>
+            </details>
           </div>
         </main>
       </div>
 
       {/* Modals */}
-      {showSettings && <SettingsModal
-        settings={settings} setSettings={setSettings}
-        appearance={appearance} setAppearance={setAppearance}
-        punctuationRules={punctuationRules} setPunctuationRules={setPunctuationRules}
-        onClose={() => setShowSettings(false)} isDark={isDark}
-      />}
-
       {showChapterSelector && <ChapterSelector
         chapters={chapters}
         onSelect={(idx) => { setIndex(idx); setShowChapterSelector(false); }}
