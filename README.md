@@ -54,6 +54,8 @@ chmod +x run_linux.sh
 
 *Note: Ensure Redis is running in the background before launching the application.*
 
+**No repo checkout needed**: every [release](https://github.com/Utility-SOC/WebReader/releases) includes `run_windows.ps1`/`.bat`/`run_linux.sh` already (in `WebReader-Portable.zip`), or grab the prebuilt `WebReader-Desktop-Windows.zip` (Windows only) for a double-click `.exe` with no Python/Node install at all.
+
 ### Option 2: Docker Compose (adds AI Image Captioning)
 
 Runs the full stack in containers — FastAPI backend, Celery worker, Redis, and the frontend dev server — and is the only path that includes AI image captioning. That feature needs ~500MB+ of ML dependencies (PyTorch/transformers) that Option 1 deliberately skips to stay lightweight.
@@ -79,6 +81,12 @@ the specifics if you're curious or troubleshooting a captioning-related
 crash. If a container gets killed under memory pressure, raise the limit
 `scripts/detect-ml-mem-limit.sh` wrote to `.env` (`ML_MEM_LIMIT`).
 
+**No repo checkout needed**: every [release](https://github.com/Utility-SOC/WebReader/releases) includes a `WebReader-Docker-Deploy.zip` with a standalone `docker-compose.yml` (pulls prebuilt images from GHCR) and a `deploy.sh` that detects your RAM and starts everything:
+```bash
+unzip WebReader-Docker-Deploy.zip -d webreader-docker && cd webreader-docker
+./deploy.sh
+```
+
 ### Option 3: Kubernetes (Helm chart)
 
 For a persistent, always-on deployment. See `charts/webreader/` — its
@@ -93,6 +101,12 @@ helm install webreader charts/webreader
 Images are built and published to GHCR automatically on every push to
 `main` (`.github/workflows/build-images.yml`); the chart's defaults already
 point at them.
+
+**No repo checkout needed**: every [release](https://github.com/Utility-SOC/WebReader/releases) includes a `WebReader-Kubernetes-Deploy.zip` with the packaged chart and a `deploy.sh` wrapper:
+```bash
+unzip WebReader-Kubernetes-Deploy.zip -d webreader-k8s && cd webreader-k8s
+./deploy.sh [release-name] [namespace]   # both optional, default to "webreader"
+```
 
 ## Configuration
 

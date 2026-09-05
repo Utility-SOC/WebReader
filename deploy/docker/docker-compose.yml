@@ -1,0 +1,60 @@
+# Standalone deploy compose file -- pulls prebuilt images from GHCR instead
+# of building from source, so this works from just this file (no repo
+# checkout needed). For local development from source, use the
+# docker-compose.yml at the repo root instead (it builds from ./backend and
+# ./frontend and bind-mounts them for live-reload).
+services:
+  backend:
+    image: ghcr.io/utility-soc/webreader-backend:latest
+    pull_policy: always
+    ports:
+      - "8000:8000"
+    # /process_pdf (manual-box image captioning) runs synchronously in this
+    # container and loads the Florence captioning model, same as worker
+    # below -- same cap, same rationale.
+    mem_limit: ${ML_MEM_LIMIT:-4g}
+    volumes:
+      - ./temp_uploads:/app/backend/temp_uploads
+      - ./layouts:/app/backend/layouts
+      - ./data:/app/backend/data
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - TESSERACT_CMD=/usr/bin/tesseract
+    depends_on:
+      - redis
+
+  worker:
+    image: ghcr.io/utility-soc/webreader-backend:latest
+    pull_policy: always
+    # --concurrency=1: Celery's default prefork pool forks a separate OS
+    # process per worker slot, and the captioning model cache only dedupes
+    # *within* a process. At concurrency>1, each process that picks up a
+    # captioning task loads its own model copy, multiplying memory past the
+    # cap below.
+    command: celery -A backend.celery_app worker --loglevel=info --concurrency=1
+    mem_limit: ${ML_MEM_LIMIT:-4g}
+    volumes:
+      - ./temp_uploads:/app/backend/temp_uploads
+      - ./layouts:/app/backend/layouts
+      - ./data:/app/backend/data
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - TESSERACT_CMD=/usr/bin/tesseract
+    depends_on:
+      - redis
+      - backend
+
+  frontend:
+    image: ghcr.io/utility-soc/webreader-frontend:latest
+    pull_policy: always
+    ports:
+      - "5173:5173"
+    environment:
+      - API_TARGET=http://backend:8000
+    depends_on:
+      - backend
+
+  redis:
+    image: "redis:alpine"
+    ports:
+      - "6379:6379"
