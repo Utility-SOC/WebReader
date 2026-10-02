@@ -23,11 +23,13 @@ import pytesseract
 from pytesseract import Output
 
 try:
-    from .pdf_auto import build_repeated_lines, extract_page_smart
+    from .pdf_auto import build_repeated_lines, extract_page_smart, replace_nonchars
     from .captioning import caption_image
+    from . import ocr_pdf
 except ImportError:  # allow running outside package context (celery worker in /app)
-    from pdf_auto import build_repeated_lines, extract_page_smart
+    from pdf_auto import build_repeated_lines, extract_page_smart, replace_nonchars
     from captioning import caption_image
+    import ocr_pdf
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -139,12 +141,59 @@ def process_text(text: str) -> List[str]:
                 words.extend(cleaned.split())
     return words
 
+def box_to_pdf_rect(box: Dict[str, Any], page) -> Tuple[float, float, float, float]:
+    """Convert a manual-layout box to a PDF-space (x0, top, x1, bottom) rect, clamped to the page."""
+    x = float(box['x'])
+    y = float(box['y'])
+    w = float(box['w'])
+    h = float(box['h'])
+
+    if box.get('relative'):
+        # Relative (0.0 - 1.0)
+        x0 = x * page.width
+        top = y * page.height
+        x1 = (x + w) * page.width
+        bottom = (y + h) * page.height
+    else:
+        # Legacy 100 DPI
+        scale = 0.72
+        x0 = x * scale
+        top = y * scale
+        x1 = (x + w) * scale
+        bottom = (y + h) * scale
+
+    # Clamp to page dimensions (Snap to edge)
+    x0 = max(0, min(float(page.width), x0))
+    top = max(0, min(float(page.height), top))
+    x1 = max(0, min(float(page.width), x1))
+    bottom = max(0, min(float(page.height), bottom))
+    return x0, top, x1, bottom
+
+
+def box_text_preview(path: str, page_idx: int, box: Dict[str, Any], n: int = 5) -> Dict[str, Any]:
+    """Text inside one manual box: word count plus its first and last n words (OCR if no text layer)."""
+    with pdfplumber.open(path) as pdf:
+        if page_idx < 0 or page_idx >= len(pdf.pages):
+            raise IndexError("page out of range")
+        page = pdf.pages[page_idx]
+        x0, top, x1, bottom = box_to_pdf_rect(box, page)
+        if x1 <= x0 or bottom <= top:
+            return {"word_count": 0, "first": "", "last": ""}
+        cropped = page.crop((x0, top, x1, bottom))
+        txt = replace_nonchars(cropped.extract_text(x_tolerance=1) or "")
+        if not txt.strip():
+            txt = extract_text_with_ocr(cropped.to_image(resolution=300).original)
+    words = process_text(txt)
+    return {"word_count": len(words), "first": " ".join(words[:n]), "last": " ".join(words[-n:])}
+
+
 def extract_text_from_pdf_range(
     path: str, 
     start_page: int, 
     end_page: Optional[int] = None, 
     manual_boxes: Dict[str, Any] = None,
-    force_ocr: bool = False
+    force_ocr: bool = False,
+    ocr_verify_pages: int = 1
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Extract text and images from a range of pages in a PDF.
@@ -164,15 +213,26 @@ def extract_text_from_pdf_range(
             if end_page is None or end_page > total_pages:
                 end_page = total_pages
 
+            # Don't trust a PDF's own text: plan which pages need OCR (no text layer, garbled
+            # glyphs, or a "searchable scan" whose text doesn't match its image).
+            ocr_key = ocr_pdf.file_key(path)
+            plan = ocr_pdf.OcrPlan()
+            try:
+                # Only the requested range; verification samples 1 page when someone is waiting (3 for library ingestion).
+                plan = ocr_pdf.plan_ocr(pdf, ocr_key, pages=list(range(start_page - 1, end_page)), sample_pages=ocr_verify_pages)
+            except Exception as plan_e:
+                logger.warning(f"OCR planning failed, using the text layer as-is: {plan_e}")
+
             for i in range(start_page - 1, end_page):
                 page = pdf.pages[i]
+                use_ocr = force_ocr or i in plan.ocr_pages
 
                 boxes = manual_boxes.get(str(i)) # keys are strings in JSON
 
                 if not boxes:
                     # AUTOMATIC MODE (smart: columns, header/footer & page-number removal)
                     txt = ""
-                    if not force_ocr:
+                    if not use_ocr:
                         try:
                             if repeated_lines is None:
                                 repeated_lines = build_repeated_lines(pdf)
@@ -181,16 +241,18 @@ def extract_text_from_pdf_range(
                             logger.warning(f"Smart extraction failed on page {i+1}, falling back: {smart_e}")
                             txt = ""
                         if not txt or not txt.strip():
-                            txt = page.extract_text(layout=True, x_tolerance=1)
+                            txt = replace_nonchars(page.extract_text(layout=True, x_tolerance=1) or "")
 
                     if txt and txt.strip():
                         extracted_text += txt + "\n"
                     else:
                         # Fallback/Force OCR
-                        logger.info(f"Running OCR on page {i+1}...")
+                        logger.info(f"Running OCR on page {i+1} ({plan.reasons.get(i, 'requested')})...")
                         try:
-                            im = page.to_image(resolution=300).original
-                            ocr_txt = extract_text_with_ocr(im)
+                            # Layout-aware: OCR words go through the same column/reading-order logic as text pages
+                            ocr_txt = ocr_pdf.page_text_from_ocr(ocr_pdf.ocr_page(page, ocr_key))
+                            if not ocr_txt.strip():
+                                ocr_txt = extract_text_with_ocr(page.to_image(resolution=300).original)
                             if ocr_txt.strip():
                                 extracted_text += ocr_txt + "\n"
                         except Exception as e:
@@ -204,26 +266,7 @@ def extract_text_from_pdf_range(
                         w = float(box['w'])
                         h = float(box['h'])
                         
-                        # Calculate PDF coordinates
-                        if box.get('relative'):
-                             # Relative (0.0 - 1.0)
-                            x0 = x * page.width
-                            top = y * page.height
-                            x1 = (x + w) * page.width
-                            bottom = (y + h) * page.height
-                        else:
-                            # Legacy 100 DPI
-                            scale = 0.72
-                            x0 = x * scale
-                            top = y * scale
-                            x1 = (x + w) * scale
-                            bottom = (y + h) * scale
-                        
-                        # Clamp to page dimensions (Snap to edge)
-                        x0 = max(0, min(float(page.width), x0))
-                        top = max(0, min(float(page.height), top))
-                        x1 = max(0, min(float(page.width), x1))
-                        bottom = max(0, min(float(page.height), bottom))
+                        x0, top, x1, bottom = box_to_pdf_rect(box, page)
 
                         if x1 <= x0 or bottom <= top: continue
                         crop_box = (x0, top, x1, bottom)
@@ -232,8 +275,8 @@ def extract_text_from_pdf_range(
                             cropped = page.crop(crop_box)
                             if b_type == 'text':
                                 txt = ""
-                                if not force_ocr:
-                                    txt = cropped.extract_text(layout=True, x_tolerance=1)
+                                if not (force_ocr or i in plan.ocr_pages):
+                                    txt = replace_nonchars(cropped.extract_text(layout=True, x_tolerance=1) or "")
                                 
                                 if txt and txt.strip():
                                     extracted_text += txt + "\n"

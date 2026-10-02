@@ -8,7 +8,8 @@ A modern web application for speed reading PDFs, EPUBs, and Images using RSVP (R
 
 - **RSVP Speed Reading**: Read faster by eliminating eye movement.
 - **Smart Automatic PDF Import**: Detects multi-column layouts (correct reading order), strips repeated headers/footers and standalone page numbers, and repairs words hyphenated across line breaks.
-- **Format Support**: PDF, EPUB, TXT, DOCX, and **Images** (.png, .jpg, .webp).
+- **Format Support**: PDF, EPUB, TXT, DOCX, PPTX, and **Images** (.png, .jpg, .webp).
+- **Accessibility analysis**: DOCX, PPTX and PDF files are checked for missing alt text, titles and language, heading and table structure, slide titles and reading order, and untagged PDFs. The result lists what is still open; it is not a compliance claim.
 - **OCR Integration**: Automatically extracts text from scanned PDFs and images using Tesseract.
 - **AI Image Captioning** *(Docker/Kubernetes only, optional)*: Photos and figures with no embedded text get an AI-generated description (via Florence-2) woven into the text WebReader reads and speaks, instead of being skipped entirely. Not included in the desktop build — see [Installation](#installation).
 - **Text-to-Speech (TTS)**: Generate and download an MP3/WAV audio version of your document.
@@ -108,6 +109,54 @@ unzip WebReader-Kubernetes-Deploy.zip -d webreader-k8s && cd webreader-k8s
 ./deploy.sh [release-name] [namespace]   # both optional, default to "webreader"
 ```
 
+## Document library (repository sync, search, reading room)
+
+WebReader can index a repository of documents (PDF, DOCX, PPTX, TXT), check each for accessibility problems, and let people search and read them. It is configured with an admin CLI, deliberately not an HTTP API, so there is nothing for an anonymous visitor to reach.
+
+```bash
+# Add a source. Nothing is published unless you say what to include (deny by default).
+python -m backend.library_cli add-source county --root /data/docs \
+    --include 'public/**' --exclude 'public/drafts/**' \
+    --rule 'public/planning/=Planning Commission:zoning,minutes'
+
+python -m backend.library_cli sync county --dry-run   # see what would be added; changes nothing
+python -m backend.library_cli sync county             # process new/changed files, detect removals
+python -m backend.library_cli held county             # processed, but not yet visible to readers
+python -m backend.library_cli release county          # publish (or: --path P for specific files)
+python -m backend.library_cli withdraw county --path public/notes.txt
+```
+
+- **Hold queue:** new items are processed but stay hidden until released (use `--no-hold` to publish immediately).
+- **Metadata provenance:** every title, author, agency and tag records where it came from (`original`, `rule`, `machine`, `human`) and is never overwritten; a revision adds a row and supersedes the old one.
+- **Public API** (what a reading-room visitor can reach, with `WEBREADER_MODE=reading_room`): `GET /library/search`, `/library/facets`, `/library/items/{id}`, `/library/items/{id}/text`. It returns only released items and never exposes repository paths. Search terms are not logged or stored.
+- Repositories are read through connectors (a plain folder today); S3, SFTP and SharePoint plug into the same interface.
+
+### Try it with sample documents
+
+```bash
+docker compose up -d
+./scripts/demo-seed.sh        # builds ./demo-repo (incl. a scanned PDF and files with typical accessibility problems) and loads it
+```
+
+Then open http://localhost:5173/#/library. Run `./scripts/ui-check.sh` for a browser check of the library UI (axe in light and dark, keyboard-only search, paging and focus, labelling of software-inferred titles, privacy, 320px reflow).
+
+## AI providers (image captioning)
+
+Captioning describes photos and figures so they are read aloud and shown as image alt text. Choose where it runs:
+
+| Provider | `WEBREADER_CAPTION_PROVIDER` | Private? | Notes |
+|---|---|---|---|
+| Local model | `local` (default) | Yes — nothing leaves your machine | Florence-2 on CPU, ~2.5GB RAM; Docker/Kubernetes only |
+| OpenAI-compatible APIs | `openai`, `deepseek`, `kimi`, `custom` | No — images are sent to the provider | `custom` takes any compatible endpoint via `WEBREADER_LLM_BASE_URL` (including a self-hosted one) |
+| Native APIs | `gemini`, `anthropic` | No | |
+| Off | `none` | Yes | |
+
+For anything but `local` and `none` you also set `WEBREADER_LLM_MODEL` (it must accept images; DeepSeek's text-only models won't) and `WEBREADER_LLM_API_KEY`. These are API keys you paste in, not account logins. API providers need no ML libraries, so they also work in the lightweight desktop install (Option 1).
+
+- **Desktop / Docker Compose:** run `./scripts/setup-ai.sh` (it prompts, hides the key, and writes `.env` readable only by you), then restart. On Windows, create `.env` with the variables above; `run_windows.ps1` loads it. The Docker release zip includes `setup-ai.sh` too.
+- **Kubernetes:** set the `ai:` block in `charts/webreader/values.yaml`. Prefer `ai.existingSecret` (a Secret you create with a `WEBREADER_LLM_API_KEY` key) over `ai.apiKey`, so the key stays out of Helm release history.
+- `GET /ai/status` shows the active provider (never the key).
+
 ## Configuration
 
 Environment variables the backend/worker read (already set correctly by
@@ -120,6 +169,10 @@ things manually or debugging):
 | `TESSERACT_CMD` | auto-detected | Path to the `tesseract` binary, if it's not on `PATH` |
 | `WEBREADER_EMBEDDED` | unset | Set to `1` to run Celery tasks in-process with no Redis/worker needed (used by the desktop build) |
 | `WEBREADER_DATA_DIR` | next to the source | Where the desktop app stores its SQLite database and settings |
+| `WEBREADER_CAPTION_PROVIDER`, `WEBREADER_LLM_MODEL`, `WEBREADER_LLM_API_KEY`, `WEBREADER_LLM_BASE_URL` | `local` | See [AI providers](#ai-providers-image-captioning) |
+| `WEBREADER_OCR_DPI`, `WEBREADER_OCR_LANG` | `200`, `eng` | Resolution and language for the OCR fallback (tesseract) used when a PDF has no usable text layer |
+| `WEBREADER_OCR_VERIFY` | `auto` | `auto` / `always` / `never`: whether a suspicious or scanned PDF's text layer is checked against OCR of a few sampled pages |
+| `WEBREADER_UPLOAD_ANALYSIS` | unset | Set to `1` to run the (slower) accessibility analysis on PDFs you upload to read; the library always runs it |
 | `ML_MEM_LIMIT` | `4g` | Docker Compose only — memory cap for the backend/worker containers; auto-written to `.env` by `scripts/detect-ml-mem-limit.sh` |
 
 ## Basic Tutorial
@@ -203,10 +256,13 @@ The primary interface provides several ways to tailor WebReader to your cognitiv
 
 WebReader is MIT licensed (see `LICENSE`).
 
-See `AI_DISCLOSURE.md` for a note on AI-assisted contributions to this
-project's code, docs, and deployment configuration.
+Third-party components and their licenses are listed in
+[`THIRD_PARTY_LICENSES/THIRD_PARTY_NOTICES.md`](THIRD_PARTY_LICENSES/THIRD_PARTY_NOTICES.md)
+(generated from the real package metadata by `scripts/generate-notices.sh`).
+Full license texts ship in the `THIRD_PARTY_LICENSES` folder of every desktop
+release and inside the Docker image at `/app/THIRD_PARTY_LICENSES/`. This
+includes [Tesseract OCR](https://github.com/tesseract-ocr/tesseract)
+(Apache License 2.0) and its Leptonica dependency, the bundled fonts (SIL Open
+Font License 1.1), and the optional image-captioning model.
 
-The desktop build bundles [Tesseract OCR](https://github.com/tesseract-ocr/tesseract)
-(Apache License 2.0) and its Leptonica dependency for built-in OCR. License
-texts and attribution ship in the `THIRD_PARTY_LICENSES` folder included with
-every desktop release.
+See `AI_DISCLOSURE.md` for a note on AI in this project.

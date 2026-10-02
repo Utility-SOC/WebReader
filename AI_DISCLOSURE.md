@@ -1,8 +1,14 @@
 # AI Disclosure
 
-Parts of this project — including code, documentation, and deployment
-configuration — were written with the assistance of AI tools (Anthropic's
-Claude). AI-assisted changes are reviewed before being committed.
+**Development.** Some of the code, documentation and configuration in this
+project was produced with the help of AI tools. Maintainers are responsible
+for what is committed.
 
-There is no single industry-standard format for this kind of disclosure yet;
-this file follows the common informal convention of a short, top-level notice.
+**Product features.** The software can optionally use AI models to generate
+descriptions, tags, translations or speech. Output produced this way may be
+inaccurate or incomplete, and the software identifies it as machine-generated
+where it is displayed. Where such models run, locally or through a third-party
+service, is chosen by whoever deploys the software.
+
+There is no single industry-standard format for this kind of disclosure; this
+file follows the common informal convention of a short, top-level notice.

@@ -1,18 +1,20 @@
-import React, { useState, useRef } from 'react';
+import React from 'react';
 import { Image, X, Download, Maximize2 } from 'lucide-react';
-import useDialogA11y from '../hooks/useDialogA11y';
+import Modal from './Modal';
 
 const ImageGallery = ({ images, isDark, onClose }) => {
-    const dialogRef = useRef(null);
-    useDialogA11y(dialogRef, onClose);
+    // If used as a modal (passed via props in App.jsx usually), we control it there.
+    // But this component seems to have dual usage or was refactored. 
+    // Based on App.jsx: <ImageGallery images={images} onClose={() => setShowAudioModal(false)} ... />
+    // It seems 'showAudioModal' was misused for naming, but let's stick to the App.jsx usage.
 
     if (!images || images.length === 0) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
+        <Modal labelId="gallery-title" onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+            <div aria-hidden="true" className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
 
-            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="image-gallery-title" tabIndex={-1} className={`relative w-full max-w-5xl h-[80vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden transform transition-all scale-100 ${isDark ? 'bg-gray-900/90 border border-gray-700 text-white' : 'bg-white/90 border border-gray-200 text-gray-900'
+            <div className={`relative w-full max-w-5xl h-[80vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden transform transition-all scale-100 ${isDark ? 'bg-gray-900/90 border border-gray-700 text-white' : 'bg-white/90 border border-gray-200 text-gray-900'
                 }`}>
 
                 {/* Header */}
@@ -22,13 +24,13 @@ const ImageGallery = ({ images, isDark, onClose }) => {
                             <Image size={24} />
                         </div>
                         <div>
-                            <h2 id="image-gallery-title" className="text-xl font-bold tracking-tight">Extracted Images</h2>
-                            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{images.length} images found</p>
+                            <h2 id="gallery-title" className="text-xl font-bold tracking-tight">Extracted Images</h2>
+                            <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>{images.length} images found</p>
                         </div>
                     </div>
                     <button
                         onClick={onClose}
-                        aria-label="Close gallery"
+                        aria-label="Close image gallery"
                         className={`p-2 rounded-full transition-colors ${isDark ? 'hover:bg-gray-800 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-900'}`}
                     >
                         <X size={24} />
@@ -44,17 +46,17 @@ const ImageGallery = ({ images, isDark, onClose }) => {
                                 <div className="aspect-video w-full overflow-hidden bg-gray-100/5 relative">
                                     <img
                                         src={img.src}
-                                        alt={img.name}
+                                        alt={img.caption || img.name}
                                         className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                                     />
                                     {/* Overlay */}
-                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-2">
                                         <a
                                             href={img.src}
                                             download={img.name + ".png"}
+                                            aria-label={`Download ${img.name}`}
                                             className="p-2 bg-white/10 hover:bg-white/20 hover:scale-110 rounded-full backdrop-blur-md text-white transition-all transform"
                                             title="Download"
-                                            aria-label={`Download ${img.name}`}
                                         >
                                             <Download size={20} />
                                         </a>
@@ -76,7 +78,7 @@ const ImageGallery = ({ images, isDark, onClose }) => {
                     </div>
                 </div>
             </div>
-        </div>
+        </Modal>
     );
 };
 

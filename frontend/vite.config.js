@@ -14,6 +14,7 @@ export default defineConfig({
       '/tasks': { target: process.env.API_TARGET || 'http://localhost:8000', changeOrigin: true },
       '/pdf': { target: process.env.API_TARGET || 'http://localhost:8000', changeOrigin: true },
       '/tts': { target: process.env.API_TARGET || 'http://localhost:8000', changeOrigin: true },
+      '/library': { target: process.env.API_TARGET || 'http://localhost:8000', changeOrigin: true },
     }
   }
 })

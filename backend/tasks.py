@@ -3,6 +3,7 @@ from .models import Document, ProcessingTask, TaskStatus
 from .utils import extract_text_from_pdf_range, process_text, load_epub_manual, load_mobi_manual, process_image_file
 import os
 from .celery_app import celery_app
+from .office import OFFICE_TYPES, process_office, process_pdf_accessibility
 import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -44,6 +45,7 @@ def process_document_core(task_id: str, document_id: int, manual_boxes: dict = N
         extracted_text = ""
         extracted_images = []
         chapters = []
+        accessibility = None
 
         file_type = doc.file_type.lower() if doc.file_type else "unknown"
 
@@ -51,6 +53,8 @@ def process_document_core(task_id: str, document_id: int, manual_boxes: dict = N
             extracted_text, extracted_images = extract_text_from_pdf_range(
                 path, start_page, end_page=None, manual_boxes=manual_boxes, force_ocr=force_ocr
             )
+        elif file_type in OFFICE_TYPES:
+            extracted_text, accessibility = process_office(path, file_type)
         elif file_type == "epub":
             extracted_text, chapters = load_epub_manual(path)
         elif file_type == "mobi":
@@ -67,6 +71,14 @@ def process_document_core(task_id: str, document_id: int, manual_boxes: dict = N
              # Basic text fallback detection
              pass 
 
+        # The accessibility analysis (layout inference, tag inspection, extra OCR) is for the library; someone
+        # waiting to read a document shouldn't pay for it. WEBREADER_UPLOAD_ANALYSIS=1 turns it back on.
+        if file_type == "pdf" and os.environ.get("WEBREADER_UPLOAD_ANALYSIS", "").strip() == "1":
+            try:
+                accessibility = process_pdf_accessibility(path)
+            except Exception as e:  # a11y facts are an enhancement; never fail the read over them
+                logger.warning(f"PDF accessibility analysis failed: {e}")
+
         words = process_text(extracted_text)
         
         # Update Document Content
@@ -75,7 +87,8 @@ def process_document_core(task_id: str, document_id: int, manual_boxes: dict = N
             "words": words,
             "images": extracted_images,
             "chapters": chapters,
-            "word_count": len(words)
+            "word_count": len(words),
+            "accessibility": accessibility
         }
         
         task_record.status = TaskStatus.COMPLETED
@@ -89,5 +102,22 @@ def process_document_core(task_id: str, document_id: int, manual_boxes: dict = N
         task_record.status = TaskStatus.FAILED
         task_record.error_message = str(e)
         db.commit()
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# Library (repository sync) -- thin wrappers so a worker can run a sync in the background
+# ---------------------------------------------------------------------------
+@celery_app.task(name="library.sync_source")
+def sync_source_task(source_id: int, dry_run: bool = False):
+    from .library_models import Source
+    from .ingest import sync_source
+    db = SessionLocal()
+    try:
+        source = db.query(Source).filter(Source.id == source_id).first()
+        if not source:
+            raise ValueError(f"No library source with id {source_id}")
+        return sync_source(db, source, dry_run=dry_run).summary()
     finally:
         db.close()

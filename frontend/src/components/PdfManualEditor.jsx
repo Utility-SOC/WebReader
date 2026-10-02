@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ArrowRight, Trash2, Check, X, Crop, Image as ImageIcon, Type } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ArrowLeft, ArrowRight, Trash2, Check, X, Image as ImageIcon, Type, Plus, Volume2 } from 'lucide-react';
+import Modal from './Modal';
 
 const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish }) => {
     const [pageIdx, setPageIdx] = useState(0);
@@ -26,6 +27,10 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
 
     const imgRef = useRef(null);
 
+    // Screen-reader announcements + first/last-word preview of the selected box
+    const [announcement, setAnnouncement] = useState('');
+    const [preview, setPreview] = useState(null);
+
     // Load Image
     useEffect(() => {
         const loadPage = async () => {
@@ -33,56 +38,10 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
             const url = `/pdf/${filename}/page/${pageIdx + 1}`;
             setImageUrl(url);
             setSelectedBoxIdx(null);
+            setPreview(null);
         };
         loadPage();
     }, [filename, pageIdx]);
-
-    // Keyboard Listeners (Delete + Nudge)
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (e.key === 'Escape') {
-                onCancel();
-                return;
-            }
-            if (selectedBoxIdx === null) return;
-
-            // Delete
-            if (e.key === 'Delete' || e.key === 'Backspace') {
-                deleteSelectedBox();
-                return;
-            }
-
-            // Nudge / Resize
-            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
-                e.preventDefault();
-                const step = 1; // Precision 1px
-                const dx = (e.key === 'ArrowRight' ? step : (e.key === 'ArrowLeft' ? -step : 0));
-                const dy = (e.key === 'ArrowDown' ? step : (e.key === 'ArrowUp' ? -step : 0));
-
-                setBoxesMap(prev => {
-                    const pageKey = String(pageIdx);
-                    const list = [...(prev[pageKey] || [])];
-                    if (!list[selectedBoxIdx]) return prev;
-
-                    const box = { ...list[selectedBoxIdx] };
-
-                    if (e.shiftKey) {
-                        // RESIZE (Expand/Contract dimensions)
-                        box.w = Math.max(5, box.w + dx);
-                        box.h = Math.max(5, box.h + dy);
-                    } else {
-                        // MOVE
-                        box.x += dx;
-                        box.y += dy;
-                    }
-                    list[selectedBoxIdx] = box;
-                    return { ...prev, [pageKey]: list };
-                });
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedBoxIdx, pageIdx, boxesMap, onCancel]);
 
     // ---------------------------
     // MOUSE HANDLERS
@@ -229,22 +188,139 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
         });
     };
 
-    const deleteSelectedBox = () => {
+    const deleteSelectedBox = useCallback(() => {
         if (selectedBoxIdx === null) return;
         setBoxesMap(prev => {
             const k = String(pageIdx);
             const list = prev[k].filter((_, i) => i !== selectedBoxIdx);
             return { ...prev, [k]: list };
         });
+        setAnnouncement(`Box ${selectedBoxIdx + 1} deleted.`);
         setSelectedBoxIdx(null);
+    }, [selectedBoxIdx, pageIdx]);
+
+    // Keyboard-only box creation: a default-sized box in the middle of the page, ready to move/resize.
+    const addBoxAtCenter = () => {
+        const nw = imgRef.current?.naturalWidth || 800;
+        const nh = imgRef.current?.naturalHeight || 1100;
+        const box = { x: nw * 0.1, y: nh * 0.4, w: nw * 0.8, h: nh * 0.1, type: tool };
+        const count = (boxesMap[String(pageIdx)] || []).length;
+        addBox(box);
+        setSelectedBoxIdx(count);
+        setAnnouncement(`${tool === 'image' ? 'Image' : 'Text'} box ${count + 1} added. Arrow keys move it, Shift plus arrows resize it.`);
     };
+
+    // Geometry of a box as fractions of the page (what the backend expects)
+    const toRelative = useCallback((b) => {
+        if (b.relative) return b;
+        const nw = imgRef.current?.naturalWidth || 800;
+        const nh = imgRef.current?.naturalHeight || 1100;
+        return { ...b, relative: true, x: b.x / nw, y: b.y / nh, w: b.w / nw, h: b.h / nh };
+    }, []);
+
+    const selectedBox = selectedBoxIdx !== null ? (boxesMap[String(pageIdx)] || [])[selectedBoxIdx] : null;
+
+    // Fetch first/last words of the selected text box (debounced while it is being moved/resized)
+    useEffect(() => {
+        if (!selectedBox || selectedBox.type === 'image') return;
+        let cancelled = false;
+        const t = setTimeout(async () => {
+            try {
+                const res = await fetch(`/pdf/${filename}/box_text`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ page: pageIdx, box: toRelative(selectedBox) })
+                });
+                if (!res.ok) throw new Error('preview failed');
+                const data = await res.json();
+                if (!cancelled) setPreview(data);
+            } catch {
+                if (!cancelled) setPreview({ word_count: 0, first: '', last: '', error: true });
+            }
+        }, 400);
+        return () => { cancelled = true; clearTimeout(t); };
+    }, [selectedBox, pageIdx, filename, toRelative]);
+
+    const speak = (text) => {
+        if (!text || !('speechSynthesis' in window)) return;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    };
+    const hear = (which) => {
+        const text = preview && (which === 'first' ? preview.first : preview.last);
+        if (!text) { setAnnouncement('No text found in this box.'); return; }
+        speak(text);
+    };
+    const speechSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+
+    // Keyboard: Delete, move (arrows), resize (Shift+arrows), Ctrl = 10px steps,
+    // N = new box, [ / ] = previous/next box, F / L = hear first / last words.
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            const tag = e.target?.tagName;
+            if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+            if (e.altKey || e.metaKey) return;
+
+            const k = String(pageIdx);
+            const count = (boxesMap[k] || []).length;
+
+            if ((e.key === 'n' || e.key === 'N') && !e.ctrlKey) { e.preventDefault(); addBoxAtCenter(); return; }
+            if (e.key === ']' || e.key === '[') {
+                if (count === 0) return;
+                e.preventDefault();
+                const dir = e.key === ']' ? 1 : -1;
+                const next = selectedBoxIdx === null ? (dir === 1 ? 0 : count - 1) : (selectedBoxIdx + dir + count) % count;
+                setSelectedBoxIdx(next);
+                setAnnouncement(`Box ${next + 1} of ${count} selected.`);
+                return;
+            }
+            if (selectedBoxIdx === null) return;
+
+            if (e.key === 'f' || e.key === 'F') { e.preventDefault(); hear('first'); return; }
+            if (e.key === 'l' || e.key === 'L') { e.preventDefault(); hear('last'); return; }
+
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                deleteSelectedBox();
+                return;
+            }
+
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+                const step = e.ctrlKey ? 10 : 1;
+                const dx = (e.key === 'ArrowRight' ? step : (e.key === 'ArrowLeft' ? -step : 0));
+                const dy = (e.key === 'ArrowDown' ? step : (e.key === 'ArrowUp' ? -step : 0));
+
+                setBoxesMap(prev => {
+                    const list = [...(prev[k] || [])];
+                    if (!list[selectedBoxIdx]) return prev;
+
+                    const box = { ...list[selectedBoxIdx] };
+
+                    if (e.shiftKey) {
+                        // RESIZE (Expand/Contract dimensions)
+                        box.w = Math.max(5, box.w + dx);
+                        box.h = Math.max(5, box.h + dy);
+                    } else {
+                        // MOVE
+                        box.x += dx;
+                        box.y += dy;
+                    }
+                    list[selectedBoxIdx] = box;
+                    return { ...prev, [k]: list };
+                });
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedBoxIdx, pageIdx, boxesMap, tool, preview, deleteSelectedBox]);
 
     const setAsStart = () => {
         setStartPage(pageIdx + 1);
-        alert(`Starting Reading from Page ${pageIdx + 1}`);
+        setAnnouncement(`Reading will start from page ${pageIdx + 1}.`);
     };
 
-    const prevPage = () => setPageIdx(Math.max(0, pageIdx - 1));
+    const prevPage = () => { setPageIdx(Math.max(0, pageIdx - 1)); setPreview(null); };
     const nextPage = () => {
         if (pageIdx >= pageCount - 1) return;
         const nextIdx = pageIdx + 1;
@@ -255,45 +331,50 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
             setBoxesMap(prev => ({ ...prev, [String(nextIdx)]: [...currentBoxes] }));
         }
         setPageIdx(nextIdx);
+        setPreview(null);
     };
 
     return (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex flex-col text-white select-none">
+        <Modal labelId="editor-title" onClose={() => {}} className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex flex-col text-white select-none">
+            <div className="sr-only" role="status" aria-live="polite">{announcement}</div>
             {/* Toolbar */}
             <div className="p-3 bg-gray-800 flex flex-wrap gap-2 justify-between items-center shadow-md border-b border-gray-700">
                 <div className="flex items-center gap-2">
-                    <h2 className="font-bold text-lg text-blue-400 hidden sm:block">Editor</h2>
+                    <h2 id="editor-title" className="font-bold text-lg text-blue-300 hidden sm:block">PDF Layout Editor</h2>
                     <div className="flex bg-gray-700 rounded p-0.5">
                         <button onClick={prevPage} disabled={pageIdx === 0} aria-label="Previous page" className="px-3 py-1 hover:bg-gray-600 rounded-l disabled:opacity-50 border-r border-gray-600">
                             <ArrowLeft size={16} />
                         </button>
-                        <span className="px-3 py-1 font-mono text-sm flex items-center bg-gray-600">Page {pageIdx + 1} / {pageCount}</span>
-                        <button onClick={nextPage} disabled={pageIdx === pageCount - 1} aria-label="Next page" className="px-3 py-1 hover:bg-gray-600 rounded-r disabled:opacity-50">
+                        <span aria-live="polite" className="px-3 py-1 font-mono text-sm flex items-center bg-gray-600">Page {pageIdx + 1} / {pageCount}</span>
+                        <button onClick={nextPage} disabled={pageIdx === pageCount - 1} aria-label="Next page (copies this page's boxes if the next page has none)" className="px-3 py-1 hover:bg-gray-600 rounded-r disabled:opacity-50">
                             <ArrowRight size={16} />
                         </button>
                     </div>
                 </div>
 
                 <div className="flex gap-2 items-center overflow-x-auto">
-                    <button onClick={() => setTool('text')} title="Text Query" aria-label="Text box tool" aria-pressed={tool === 'text'} className={`p-2 rounded ${tool === 'text' ? 'bg-blue-600 ring-1 ring-white' : 'bg-gray-700'}`}>
-                        <Type size={20} />
+                    <button onClick={() => setTool('text')} title="Text box tool" aria-label="Text box tool" aria-pressed={tool === 'text'} className={`p-2 rounded flex items-center gap-1 text-xs font-bold ${tool === 'text' ? 'bg-blue-700 ring-1 ring-white' : 'bg-gray-700'}`}>
+                        <Type size={20} /> <span className="hidden md:inline">Text</span>
                     </button>
-                    <button onClick={() => setTool('image')} title="Image Extraction" aria-label="Image box tool" aria-pressed={tool === 'image'} className={`p-2 rounded ${tool === 'image' ? 'bg-orange-600 ring-1 ring-white' : 'bg-gray-700'}`}>
-                        <ImageIcon size={20} />
+                    <button onClick={() => setTool('image')} title="Image box tool" aria-label="Image box tool" aria-pressed={tool === 'image'} className={`p-2 rounded flex items-center gap-1 text-xs font-bold ${tool === 'image' ? 'bg-orange-700 ring-1 ring-white' : 'bg-gray-700'}`}>
+                        <ImageIcon size={20} /> <span className="hidden md:inline">Image</span>
                     </button>
-                    <button onClick={() => setFitWidth(!fitWidth)} aria-label={fitWidth ? "Switch to actual size" : "Switch to fit width"} className={`p-2 rounded bg-gray-700 text-xs font-bold w-12`}>{fitWidth ? 'FIT' : '1:1'}</button>
+                    <button onClick={addBoxAtCenter} title="Add a box (N)" aria-keyshortcuts="N" className="px-2 py-2 rounded bg-gray-700 text-xs font-bold flex items-center gap-1 whitespace-nowrap">
+                        <Plus size={16} /> Add box <span className="hidden md:inline opacity-80">(N)</span>
+                    </button>
+                    <button onClick={() => setFitWidth(!fitWidth)} aria-label="Page zoom" aria-pressed={fitWidth} title="Toggle fit-to-width / actual size" className={`p-2 rounded bg-gray-700 text-xs font-bold w-12`}>{fitWidth ? 'FIT' : '1:1'}</button>
 
                     {selectedBoxIdx !== null ? (
-                        <button onClick={deleteSelectedBox} aria-label="Delete selected box" className="p-2 bg-red-600 rounded">
+                        <button onClick={deleteSelectedBox} aria-label={`Delete box ${selectedBoxIdx + 1} (Delete key)`} title="Delete box" className="p-2 bg-red-700 rounded">
                             <Trash2 size={20} />
                         </button>
                     ) : (
-                        <button onClick={setAsStart} className="px-2 py-1 bg-purple-600 rounded text-xs font-bold whitespace-nowrap" title="Start from this page">Start Here (pg{startPage})</button>
+                        <button onClick={setAsStart} className="px-2 py-1 bg-purple-700 rounded text-xs font-bold whitespace-nowrap" title="Start from this page">Start Here (pg{startPage})</button>
                     )}
                 </div>
 
                 <div className="flex gap-2">
-                    <button onClick={onCancel} className="px-3 py-1 text-gray-400 hover:text-white text-sm flex items-center gap-1">
+                    <button onClick={onCancel} className="px-3 py-1 text-gray-300 hover:text-white text-sm flex items-center gap-1">
                         <X size={16} /> Cancel
                     </button>
                     <button onClick={() => {
@@ -317,14 +398,34 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
                             });
                         });
                         onFinish(normMap, startPage);
-                    }} className="px-3 py-1 bg-green-600 hover:bg-green-500 rounded font-bold shadow-lg flex items-center gap-1">
+                    }} className="px-3 py-1 bg-green-700 hover:bg-green-600 rounded font-bold shadow-lg flex items-center gap-1">
                         <Check size={16} /> DONE
                     </button>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-auto bg-gray-500 flex justify-center p-2 sm:p-4 cursor-default">
-                <div className="relative shadow-2xl bg-white select-none box-default"
+            {/* Selected-box panel: keyboard help, geometry, and first/last words */}
+            <div className="px-3 py-2 bg-gray-800 border-b border-gray-700 text-sm flex flex-wrap gap-x-6 gap-y-1 items-center">
+                {selectedBox ? (
+                    <>
+                        <strong>{selectedBox.type === 'image' ? 'Image' : 'Text'} box {selectedBoxIdx + 1} of {(boxesMap[String(pageIdx)] || []).length}</strong>
+                        {selectedBox.type !== 'image' && (
+                            <>
+                                <span>{preview ? `${preview.word_count} words` : 'Reading box…'}</span>
+                                <button onClick={() => hear('first')} disabled={!speechSupported || !preview?.first} aria-keyshortcuts="F" className="px-2 py-1 bg-green-700 rounded font-semibold flex items-center gap-1 disabled:opacity-60"><Volume2 size={14} /> Hear first words (F)</button>
+                                <button onClick={() => hear('last')} disabled={!speechSupported || !preview?.last} aria-keyshortcuts="L" className="px-2 py-1 bg-blue-700 rounded font-semibold flex items-center gap-1 disabled:opacity-60"><Volume2 size={14} /> Hear last words (L)</button>
+                                <span className="text-gray-200"><b>First:</b> {preview?.first || '—'} <b className="ml-3">Last:</b> {preview?.last || '—'}</span>
+                            </>
+                        )}
+                    </>
+                ) : (
+                    <span className="text-gray-200">No box selected. Press N to add a box, Tab or [ ] to select one, or drag on the page.</span>
+                )}
+                <span className="text-gray-300 text-xs ml-auto">Arrows move · Shift+arrows resize · Ctrl = 10× · Delete removes</span>
+            </div>
+
+            <div tabIndex={0} role="region" aria-label="PDF page. Scrollable." className="flex-1 overflow-auto bg-gray-500 flex justify-center p-2 sm:p-4 cursor-default">
+                <div className="relative shadow-2xl bg-white select-none box-default outline-none"
                     style={{
                         alignSelf: 'flex-start',
                         width: fitWidth ? '100%' : 'auto',
@@ -336,6 +437,7 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
                             ref={imgRef}
                             src={imageUrl}
                             draggable="false"
+                            alt={`PDF page ${pageIdx + 1} of ${pageCount}. Use the box tools and keyboard shortcuts to mark regions.`}
                             className="block"
                             onLoad={(e) => {
                                 const nw = e.target.naturalWidth;
@@ -382,7 +484,12 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
 
                             return (
                                 <div key={i}
-                                    className={`absolute border-2 flex items-center justify-center group ${box.type === 'image' ? 'border-orange-500 bg-orange-500/20' : 'border-blue-600 bg-blue-600/10'}`}
+                                    tabIndex={0}
+                                    role="button"
+                                    aria-label={`${box.type === 'image' ? 'Image' : 'Text'} box ${i + 1} of ${(boxesMap[String(pageIdx)] || []).length}${isSelected ? ', selected' : ''}`}
+                                    aria-pressed={isSelected}
+                                    onFocus={() => { if (selectedBoxIdx !== i) setSelectedBoxIdx(i); }}
+                                    className={`absolute border-2 flex items-center justify-center group focus-visible:ring-4 focus-visible:ring-white ${box.type === 'image' ? 'border-orange-500 bg-orange-500/20' : 'border-blue-600 bg-blue-600/10'}`}
                                     style={{
                                         left: box.x * scale,
                                         top: box.y * scale,
@@ -392,8 +499,8 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
                                         zIndex: isSelected ? 20 : 10,
                                         cursor: 'move'
                                     }}>
-                                    <div className={`absolute -top-5 left-0 text-xs px-1.5 py-0.5 font-bold rounded text-white ${box.type === 'image' ? 'bg-orange-500' : 'bg-blue-600'} ${isSelected ? 'ring-1 ring-white' : ''}`}>{i + 1}</div>
-                                    {isSelected && (<><div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-500 cursor-nw-resize hover:bg-blue-200"></div><div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-500 cursor-ne-resize hover:bg-blue-200"></div><div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-500 cursor-sw-resize hover:bg-blue-200"></div><div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-500 cursor-se-resize hover:bg-blue-200"></div></>)}
+                                    <div className={`absolute -top-5 left-0 text-xs px-1.5 py-0.5 font-bold rounded text-white ${box.type === 'image' ? 'bg-orange-700' : 'bg-blue-700'} ${isSelected ? 'ring-1 ring-white' : ''}`}>{i + 1} {box.type === 'image' ? 'Image' : 'Text'}</div>
+                                    {isSelected && (<><div aria-hidden="true" className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-500 cursor-nw-resize hover:bg-blue-200"></div><div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-500 cursor-ne-resize hover:bg-blue-200"></div><div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-500 cursor-sw-resize hover:bg-blue-200"></div><div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-500 cursor-se-resize hover:bg-blue-200"></div></>)}
                                 </div>
                             );
                         })}
@@ -411,7 +518,7 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
                     </div>
                 </div>
             </div>
-        </div>
+        </Modal>
     );
 };
 

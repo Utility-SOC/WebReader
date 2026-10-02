@@ -1,0 +1,6 @@
+{
+  "name": "webreader-ui-check",
+  "private": true,
+  "type": "module",
+  "dependencies": { "playwright": "1.49.1", "@axe-core/playwright": "4.10.1" }
+}

@@ -108,7 +108,16 @@ catch {
     Write-Host "[WARN] Tesseract check encountered an error: $_"
 }
 
-# 5. Launch
+# 5. Load AI provider settings from .env (see README "AI providers"), if present
+if (Test-Path ".env") {
+    foreach ($line in Get-Content ".env") {
+        if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+            Set-Item -Path "Env:$($Matches[1])" -Value $Matches[2]
+        }
+    }
+}
+
+# 6. Launch
 Write-Host ""
 Write-Host "[INFO] Starting Server on http://localhost:$port" -ForegroundColor Green
 Write-Host "[INFO] Browser will open in ~15 seconds..." -ForegroundColor Cyan

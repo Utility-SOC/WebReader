@@ -42,6 +42,19 @@ _PAGE_NUM_RE = re.compile(
 
 _HYPHENS = ("-", "‐", "‑", "­")
 
+# Some PDFs map their space glyph to a Unicode NON-character (U+FFFF, U+FFFE, U+FDD0-FDEF) through a broken font
+# encoding. The text is fine but the words are no longer separated, so whole lines come out as one giant "word".
+_NONCHARS = re.compile("[\ufffe\uffff\ufdd0-\ufdef]+")
+
+
+def replace_nonchars(text: str) -> str:
+    """Turn those non-characters into spaces (so they separate words), leaving everything else as it was."""
+    return _NONCHARS.sub(" ", text)
+
+
+def clean_text(text: str) -> str:
+    return re.sub(r"[ \t]+", " ", replace_nonchars(text)).strip()
+
 
 def _normalize(text: str) -> str:
     """Normalize a line for repeat detection: digits and punctuation are removed
@@ -73,7 +86,7 @@ def _lines_from_words(words: List[Dict[str, Any]], y_tolerance: float = 3.0) -> 
             })
     for line in lines:
         line["words"].sort(key=lambda w: w["x0"])
-        line["text"] = " ".join(w["text"] for w in line["words"])
+        line["text"] = clean_text(" ".join(w["text"] for w in line["words"]))
     return lines
 
 
@@ -230,26 +243,36 @@ def _find_gutters(words: List[Dict[str, Any]], region_x0: float, region_x1: floa
     return splits
 
 
-def _join_lines(lines: List[Dict[str, Any]]) -> str:
-    """Join lines top-to-bottom with paragraph detection and dehyphenation."""
+def _split_paragraphs(lines: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    """Group top-to-bottom lines into paragraphs (a gap well above the median line gap starts one)."""
     if not lines:
-        return ""
+        return []
     gaps = [b["top"] - a["bottom"] for a, b in zip(lines, lines[1:])]
     positive = sorted(g for g in gaps if g >= 0)
     median_gap = positive[len(positive) // 2] if positive else 0.0
 
-    out = ""
+    paras: List[List[Dict[str, Any]]] = []
     for idx, line in enumerate(lines):
-        text = line["text"].strip()
-        if not text:
+        if not line["text"].strip():
             continue
-        if not out:
-            out = text
+        if not paras:
+            paras.append([line])
             continue
         gap = gaps[idx - 1] if idx - 1 < len(gaps) else 0.0
-        para = median_gap > 0 and gap > median_gap * PARA_GAP_FACTOR + 1.0
-        if para:
-            out += "\n\n" + text
+        if median_gap > 0 and gap > median_gap * PARA_GAP_FACTOR + 1.0:
+            paras.append([line])
+        else:
+            paras[-1].append(line)
+    return paras
+
+
+def _paragraph_text(lines: List[Dict[str, Any]]) -> str:
+    """Join one paragraph's lines, repairing hyphenation across line breaks."""
+    out = ""
+    for line in lines:
+        text = line["text"].strip()
+        if not out:
+            out = text
         elif out.endswith(_HYPHENS) and text[:1].islower():
             out = out[:-1] + text  # dehyphenate
         else:
@@ -257,15 +280,31 @@ def _join_lines(lines: List[Dict[str, Any]]) -> str:
     return out
 
 
-def extract_page_smart(page, repeated: Optional[Set[str]] = None) -> str:
+def _join_lines(lines: List[Dict[str, Any]]) -> str:
+    """Join lines top-to-bottom with paragraph detection and dehyphenation."""
+    return "\n\n".join(_paragraph_text(p) for p in _split_paragraphs(lines))
+
+
+def reading_order_groups(page, repeated: Optional[Set[str]] = None, exclude_bboxes=None,
+                         extra_attrs=None) -> List[List[Dict[str, Any]]]:
     """
-    Extract readable text from a page in natural reading order.
-    Returns "" when the page has no extractable text (caller falls back to OCR).
+    A page's lines in natural reading order, as groups: each group is a run of lines that
+    reads top-to-bottom (a full-width band, or one column within a band). Groups come out
+    in reading order; [] when the page has no extractable text.
+
+    exclude_bboxes: (x0, top, x1, bottom) regions to leave out (e.g. tables handled separately).
+    extra_attrs: pdfplumber word attributes to keep, e.g. ["fontname", "size"].
     """
     repeated = repeated or set()
-    words = page.extract_words(x_tolerance=1.5, y_tolerance=3.0)
+    kw = {"extra_attrs": list(extra_attrs)} if extra_attrs else {}
+    words = page.extract_words(x_tolerance=1.5, y_tolerance=3.0, **kw)
+    if exclude_bboxes:
+        def _inside(w):
+            cx, cy = (w["x0"] + w["x1"]) / 2.0, (w["top"] + w["bottom"]) / 2.0
+            return any(bx0 <= cx <= bx1 and by0 <= cy <= by1 for bx0, by0, bx1, by1 in exclude_bboxes)
+        words = [w for w in words if not _inside(w)]
     if not words:
-        return ""
+        return []
     h = float(page.height)
 
     # 1. Build visual lines, drop headers/footers and page numbers
@@ -279,7 +318,7 @@ def extract_page_smart(page, repeated: Optional[Set[str]] = None) -> str:
             continue
         kept.append(line)
     if not kept:
-        return ""
+        return []
 
     region_x0 = min(l["x0"] for l in kept)
     region_x1 = max(l["x1"] for l in kept)
@@ -297,7 +336,7 @@ def extract_page_smart(page, repeated: Optional[Set[str]] = None) -> str:
 
     # 3. Single column: simple top-to-bottom join
     if not splits:
-        return _join_lines(kept)
+        return [kept]
 
     # 4. Classify lines: spanning (full-width) vs columnar; group into bands
     def is_spanning(line: Dict[str, Any]) -> bool:
@@ -326,17 +365,25 @@ def extract_page_smart(page, repeated: Optional[Set[str]] = None) -> str:
 
     # 5. Assemble: spanning bands as-is; columnar bands left column first
     bounds = [region_x0 - 1] + splits + [region_x1 + 1]
-    parts: List[str] = []
+    groups: List[List[Dict[str, Any]]] = []
     for band in bands:
         if band["spanning"]:
-            parts.append(_join_lines(band["lines"]))
+            groups.append(band["lines"])
             continue
         band_words = [w for line in band["lines"] for w in line["words"]]
         for c in range(len(bounds) - 1):
             cx0, cx1 = bounds[c], bounds[c + 1]
             col_words = [w for w in band_words if cx0 <= (w["x0"] + w["x1"]) / 2.0 < cx1]
             col_lines = _lines_from_words(col_words)
-            col_text = _join_lines(col_lines)
-            if col_text.strip():
-                parts.append(col_text)
+            if _join_lines(col_lines).strip():
+                groups.append(col_lines)
+    return groups
+
+
+def extract_page_smart(page, repeated: Optional[Set[str]] = None) -> str:
+    """
+    Extract readable text from a page in natural reading order.
+    Returns "" when the page has no extractable text (caller falls back to OCR).
+    """
+    parts = [_join_lines(g) for g in reading_order_groups(page, repeated)]
     return "\n\n".join(p for p in parts if p.strip())

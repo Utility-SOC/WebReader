@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Mic, Download } from 'lucide-react';
-import useDialogA11y from '../hooks/useDialogA11y';
+import Modal from './Modal';
 
 const AudioModal = ({ filename, pageCount, manualBoxes, onCancel }) => {
-    const dialogRef = useRef(null);
-    useDialogA11y(dialogRef, onCancel);
     const [voices, setVoices] = useState([]);
     const [loadingVoices, setLoadingVoices] = useState(true);
     const [selectedVoice, setSelectedVoice] = useState("");
@@ -54,7 +52,7 @@ const AudioModal = ({ filename, pageCount, manualBoxes, onCancel }) => {
                 try {
                     const json = JSON.parse(errText);
                     throw new Error(json.detail || errText);
-                } catch (e) {
+                } catch {
                     throw new Error(errText);
                 }
             }
@@ -85,23 +83,24 @@ const AudioModal = ({ filename, pageCount, manualBoxes, onCancel }) => {
     };
 
     return (
-        <div className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex items-center justify-center p-4">
-            <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="audio-modal-title" tabIndex={-1} className="bg-gray-800 text-white rounded-lg shadow-2xl max-w-md w-full border border-gray-700 font-sans">
+        <Modal labelId="audio-title" onClose={onCancel} className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex items-center justify-center p-4">
+            <div className="bg-gray-800 text-white rounded-lg shadow-2xl max-w-md w-full border border-gray-700 font-sans">
                 <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-                    <h2 id="audio-modal-title" className="font-bold text-lg flex items-center gap-2"><Mic size={20} /> Audio Options</h2>
-                    <button onClick={onCancel} aria-label="Close" className="text-gray-400 hover:text-white"><X size={20} /></button>
+                    <h2 id="audio-title" className="font-bold text-lg flex items-center gap-2"><Mic size={20} /> Audio Options</h2>
+                    <button onClick={onCancel} aria-label="Close audio options" className="text-gray-300 hover:text-white"><X size={20} /></button>
                 </div>
                 <div className="p-6 space-y-4">
                     {/* Voice Selector */}
                     <div>
-                        <label className="block text-sm font-bold mb-1 text-gray-400">Select Voice</label>
+                        <label htmlFor="audio-voice" className="block text-sm font-bold mb-1 text-gray-300">Select Voice</label>
                         {loadingVoices ? (
-                            <div className="text-sm text-gray-400">Loading voices...</div>
+                            <div role="status" className="text-sm opacity-80">Loading voices...</div>
                         ) : (
                             <select
+                                id="audio-voice"
                                 value={selectedVoice}
                                 onChange={(e) => setSelectedVoice(e.target.value)}
-                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500"
+                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500 outline-none"
                             >
                                 {voices.map(v => (
                                     <option key={v.id} value={v.id}>{v.name} ({v.lang})</option>
@@ -113,45 +112,48 @@ const AudioModal = ({ filename, pageCount, manualBoxes, onCancel }) => {
                     {/* Page Range */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-bold mb-1 text-gray-400">Start Page</label>
+                            <label htmlFor="audio-start" className="block text-sm font-bold mb-1 text-gray-300">Start Page</label>
                             <input
                                 type="number"
                                 min="1"
                                 max={pageCount || 9999}
+                                id="audio-start"
                                 value={startPage}
                                 onChange={(e) => setStartPage(e.target.value)}
-                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500"
+                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500 outline-none"
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-bold mb-1 text-gray-400">End Page</label>
+                            <label htmlFor="audio-end" className="block text-sm font-bold mb-1 text-gray-300">End Page</label>
                             <input
                                 type="number"
                                 min="1"
                                 max={pageCount || 9999}
+                                id="audio-end"
                                 value={endPage}
                                 onChange={(e) => setEndPage(e.target.value)}
-                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500"
+                                className="w-full p-2 rounded bg-gray-900 border border-gray-600 focus:border-blue-500 outline-none"
                             />
                         </div>
                     </div>
                 </div>
                 <div className="p-4 border-t border-gray-700 flex justify-end gap-2 bg-gray-900/50 rounded-b-lg">
-                    <button onClick={onCancel} className="px-4 py-2 text-gray-400 hover:text-white font-semibold">Cancel</button>
+                    <button onClick={onCancel} className="px-4 py-2 text-gray-300 hover:text-white font-semibold">Cancel</button>
                     <button
                         onClick={handleDownload}
                         disabled={isDownloading || loadingVoices}
+                        aria-busy={isDownloading}
                         className={`px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold shadow-lg flex items-center gap-2 ${isDownloading ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                         {isDownloading ? (
-                            <><span>Processing...</span></>
+                            <span role="status">Processing audio, please wait…</span>
                         ) : (
                             <><Download size={18} /> <span>Download MP3</span></>
                         )}
                     </button>
                 </div>
             </div>
-        </div>
+        </Modal>
     );
 };
 

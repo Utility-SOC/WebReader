@@ -1,5 +1,9 @@
 services:
   backend:
+    env_file:
+      # AI provider settings written by scripts/setup-ai.sh (optional; defaults to local models)
+      - path: .env
+        required: false
     build:
       context: .
       dockerfile: backend/Dockerfile
@@ -21,6 +25,10 @@ services:
       - redis
 
   worker:
+    env_file:
+      # AI provider settings written by scripts/setup-ai.sh (optional; defaults to local models)
+      - path: .env
+        required: false
     build:
       context: .
       dockerfile: backend/Dockerfile

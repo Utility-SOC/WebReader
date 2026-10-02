@@ -22,6 +22,22 @@ imagePullSecrets: []
 # imagePullSecrets:
 #   - name: ghcr-pull-secret
 
+# AI provider for image captioning. `local` runs Florence-2 inside the pods
+# (private; needs the ~4Gi limits below). Any other provider sends each
+# captioned image to that third party but needs far less memory -- you can
+# lower backend/worker memory limits to ~1Gi when you pick one.
+#   captionProvider: local | none | openai | deepseek | kimi | custom | gemini | anthropic
+ai:
+  captionProvider: local
+  model: ""      # required for every remote provider; must accept images
+  baseUrl: ""    # required for `custom`, optional override otherwise
+  # API key -- prefer a Secret you create yourself so the key never lands in
+  # a values file or Helm release history:
+  #   kubectl create secret generic webreader-llm --from-literal=WEBREADER_LLM_API_KEY=...
+  existingSecret: ""
+  # Or let the chart create the Secret (key then appears in release values):
+  apiKey: ""
+
 backend:
   # backend/database.py uses SQLite (a single-writer file database), and
   # backend/captioning.py's Florence-2 model cache only dedupes within one
