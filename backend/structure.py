@@ -17,6 +17,15 @@ from typing import Any, Dict, List, Optional
 
 ORIGINAL, MACHINE, HUMAN = "original", "machine", "human"
 
+
+def tables_as_images() -> bool:
+    """Tables are complex (merged cells, nesting, layout use), so by default they are
+    treated like figures: they need a description, not a rebuilt header structure.
+    WEBREADER_TABLES=structured switches the finer-grained table checks back on."""
+    import os
+    return os.environ.get("WEBREADER_TABLES", "image").strip().lower() != "structured"
+
+
 # Block kinds
 HEADING, SLIDE_TITLE, PARAGRAPH, LIST_ITEM, TABLE, FIGURE, NOTE = (
     "heading", "slide_title", "paragraph", "list_item", "table", "figure", "note")
@@ -59,7 +68,10 @@ class DocumentStructure:
             if b.kind in (HEADING, SLIDE_TITLE, PARAGRAPH, LIST_ITEM, NOTE):
                 if b.text.strip():
                     out.append(b.text.strip())
+            elif b.kind == TABLE and tables_as_images() and b.alt_text.strip():
+                out.append(f"Table: {b.alt_text.strip()}")
             elif b.kind == TABLE:
+                # No description yet: keep the content readable rather than dropping it.
                 rows = [" , ".join(c.strip() for c in r if c.strip()) for r in b.rows]
                 rows = [r for r in rows if r]
                 if rows:

@@ -60,7 +60,8 @@ def test_docx_structure_in_reading_order(sample_docx):
 def test_docx_issues(sample_docx):
     _, acc = process_office(sample_docx, "docx")
     got = {i["code"] for i in acc["issues"]}
-    assert {"DOC_TITLE_MISSING", "HEADING_SKIP", "TABLE_NO_HEADER", "FIG_ALT_MISSING", "FIG_ALT_PLACEHOLDER"} <= got
+    assert {"DOC_TITLE_MISSING", "HEADING_SKIP", "TABLE_DESCRIPTION_MISSING", "FIG_ALT_MISSING", "FIG_ALT_PLACEHOLDER"} <= got
+    assert "TABLE_NO_HEADER" not in got  # tables are treated as images by default
     # the good picture produced no figure issue
     fig_issues = [i for i in acc["issues"] if i["code"].startswith("FIG_")]
     assert len(fig_issues) == 2
@@ -75,7 +76,32 @@ def test_docx_reading_text_includes_alt_text_and_tables(sample_docx):
     assert "image1.png" in text  # present alt text is read, even though flagged
 
 
-def test_docx_marked_header_row_and_title_clear_issues(tmp_path):
+def test_docx_table_alt_text_clears_description_issue_and_is_read(tmp_path):
+    d = docx.Document()
+    t = d.add_table(rows=2, cols=2)
+    for r in range(2):
+        for c in range(2):
+            t.cell(r, c).text = f"r{r}c{c}"
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    pr = t._tbl.tblPr
+    cap = OxmlElement("w:tblCaption"); cap.set(qn("w:val"), "Budget by quarter"); pr.append(cap)
+    desc = OxmlElement("w:tblDescription"); desc.set(qn("w:val"), "Revenue rose each quarter."); pr.append(desc)
+    p = tmp_path / "t.docx"; d.save(p)
+    text, acc = process_office(str(p), "docx")
+    assert not [i for i in acc["issues"] if i["code"].startswith("TABLE_")]
+    assert "Table: Budget by quarter Revenue rose each quarter." in text and "r1c1" not in text
+
+
+def test_structured_table_mode_restores_header_checks(sample_docx, monkeypatch):
+    monkeypatch.setenv("WEBREADER_TABLES", "structured")
+    _, acc = process_office(sample_docx, "docx")
+    got = {i["code"] for i in acc["issues"]}
+    assert "TABLE_NO_HEADER" in got and "TABLE_DESCRIPTION_MISSING" not in got
+
+
+def test_docx_marked_header_row_and_title_clear_issues(tmp_path, monkeypatch):
+    monkeypatch.setenv("WEBREADER_TABLES", "structured")
     d = docx.Document()
     d.core_properties.title = "Budget"
     d.core_properties.language = "en-US"
@@ -154,7 +180,8 @@ def test_pptx_issues(sample_pptx):
     assert [i["location"] for i in by["SLIDE_TITLE_NOT_FIRST"]] == ["Slide 4"]
     assert [i["location"] for i in by["FIG_ALT_MISSING"]] == ["Slide 2"]
     assert [i["location"] for i in by["FIG_ALT_PLACEHOLDER"]] == ["Slide 2"]  # the "image.png" one
-    assert [i["location"] for i in by["TABLE_NO_HEADER"]] == ["Slide 3"]
+    assert [i["location"] for i in by["TABLE_DESCRIPTION_MISSING"]] == ["Slide 3"]
+    assert "TABLE_NO_HEADER" not in by
 
 
 def test_pptx_reading_text(sample_pptx):

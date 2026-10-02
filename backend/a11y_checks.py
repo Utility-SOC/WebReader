@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List
 
-from .structure import DocumentStructure, FIGURE, HEADING, SLIDE_TITLE, TABLE
+from .structure import DocumentStructure, FIGURE, HEADING, SLIDE_TITLE, TABLE, tables_as_images
 
 ERROR, WARNING, INFO = "error", "warning", "info"
 
@@ -48,13 +48,20 @@ class Issue:
 def analyze(s: DocumentStructure) -> List[Issue]:
     issues: List[Issue] = []
 
-    if not s.title:
-        issues.append(Issue("DOC_TITLE_MISSING", ERROR, "The document has no title in its properties.",
-                            wcag="2.4.2", fix="auto"))
-    if not s.language:
-        issues.append(Issue("DOC_LANGUAGE_MISSING", ERROR, "The document's language is not set.",
-                            wcag="3.1.1", fix="suggest"))
+    if s.format == "pdf":
+        # Document-level PDF facts (title, language, tagged, scanned) come from analyze_pdf.
+        if s.metadata.get("tagged"):
+            return issues  # the real tag tree is checked by pdf_tags.inspect_tags; layout guesses would only add noise
+    else:
+        if not s.title:
+            issues.append(Issue("DOC_TITLE_MISSING", ERROR, "The document has no title in its properties.",
+                                wcag="2.4.2", fix="auto"))
+        if not s.language:
+            issues.append(Issue("DOC_LANGUAGE_MISSING", ERROR, "The document's language is not set.",
+                                wcag="3.1.1", fix="suggest"))
 
+    if s.format == "pdf":
+        _check_pdf_text(s, issues)
     _check_figures(s, issues)
     _check_tables(s, issues)
     if s.format == "docx":
@@ -62,6 +69,36 @@ def analyze(s: DocumentStructure) -> List[Issue]:
     if s.format == "pptx":
         _check_slides(s, issues)
     return issues
+
+
+def _check_pdf_text(s, issues):
+    """Is the PDF's own text trustworthy? (Findings come from the OCR planner in ocr_pdf.)"""
+    m = s.metadata
+    reasons = {int(p): r for p, r in (m.get("ocr_reasons") or {}).items()}
+    analysed = m.get("analysed_pages") or 0
+    if m.get("unreliable_layer"):
+        agree = m.get("text_agreement") or []
+        pct = round(100 * sorted(agree)[len(agree) // 2]) if agree else 0
+        issues.append(Issue("PDF_TEXT_LAYER_UNRELIABLE", ERROR,
+                            f"The PDF is a scan whose embedded text doesn't match its pages (OCR confirmed only about {pct}% of its words), "
+                            "so a screen reader would read wrong text.", wcag="1.3.1", fix="auto",
+                            detail={"sampled_agreement": agree}))
+    garbled = sorted(p for p, r in reasons.items() if r.startswith("garbled"))
+    if garbled:
+        issues.append(Issue("PDF_TEXT_LAYER_GARBLED", ERROR,
+                            f"{len(garbled)} page(s) have unreadable embedded text (unmapped or garbage characters).",
+                            f"Page {garbled[0]}", "1.3.1", "auto",
+                            {"pages": garbled[:50], "reasons": {str(p): reasons[p] for p in garbled[:10]}}))
+    no_text = sorted(p for p, r in reasons.items() if r == "no_text")
+    if no_text and len(no_text) < analysed:
+        issues.append(Issue("PDF_PAGES_WITHOUT_TEXT", ERROR,
+                            f"{len(no_text)} page(s) are images with no text layer; they need OCR to be readable by assistive technology.",
+                            f"Page {no_text[0]}", "1.4.5", "auto", {"pages": no_text[:50]}))
+    low = m.get("ocr_low_confidence_pages") or []
+    if low:
+        issues.append(Issue("OCR_LOW_CONFIDENCE", WARNING,
+                            f"OCR was unsure about {len(low)} page(s); the recovered text there needs a person to check it.",
+                            f"Page {low[0]}", "1.4.5", "manual", {"pages": low[:50]}))
 
 
 def _check_figures(s, issues):
@@ -89,6 +126,23 @@ def _check_figures(s, issues):
 
 
 def _check_tables(s, issues):
+    if tables_as_images():
+        # Treated like figures: the table needs a description a screen-reader user can use
+        # instead of walking its cells. (Existing alt text is checked like any other.)
+        for b in s.blocks:
+            if b.kind != TABLE or not any(any(c for c in r) for r in b.rows):
+                continue
+            alt = (b.alt_text or "").strip()
+            size = f"{len(b.rows)} rows by {max(len(r) for r in b.rows)} columns"
+            if not alt:
+                issues.append(Issue("TABLE_DESCRIPTION_MISSING", ERROR,
+                                    f"The table ({size}) has no description for assistive technology.",
+                                    b.location, "1.1.1", "suggest", {"rows": len(b.rows), "table_text": b.rows[:20]}))
+            elif _FILENAME_ALT.search(alt) or _GENERIC_NAME.match(alt):
+                issues.append(Issue("TABLE_DESCRIPTION_PLACEHOLDER", ERROR,
+                                    f"The table's description ('{alt}') looks like a placeholder, not a description.",
+                                    b.location, "1.1.1", "suggest", {"alt": alt}))
+        return
     for b in s.blocks:
         if b.kind != TABLE or not b.rows or len(b.rows) < 2:
             continue

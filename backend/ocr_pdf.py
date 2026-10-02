@@ -1,0 +1,300 @@
+"""
+OCR as a fallback for PDF text -- assuming the worst.
+
+Real-world PDFs: scans with no text at all; scans with a *bad* OCR layer that
+looks plausible but is wrong; fonts with no Unicode mapping that extract as
+"(cid:123)" or private-use characters; letter-spaced garbage. So a PDF's own
+text is trusted only if it passes cheap checks, and "searchable scans" are
+verified by OCR-ing a few pages and comparing.
+
+OCR returns words with positions, and pdf_auto's column / reading-order logic
+works on exactly that, so an OCR page is wrapped in `OcrPage` (it quacks like a
+pdfplumber page for that code) and gets the same layout handling as a text
+page. Results are cached on disk by file hash, so reading, structure
+analysis and verification never OCR the same page twice.
+"""
+
+import hashlib
+import json
+import logging
+import os
+import re
+import statistics
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Set, Tuple
+
+import pytesseract
+from PIL import Image, ImageFilter, ImageOps
+
+logger = logging.getLogger("SpeedReaderUtils")
+
+OCR_DPI = int(os.environ.get("WEBREADER_OCR_DPI", "300"))
+OCR_LANG = os.environ.get("WEBREADER_OCR_LANG", "eng")
+VERIFY_MODE = os.environ.get("WEBREADER_OCR_VERIFY", "auto").strip().lower()   # auto | always | never
+VERIFY_SAMPLE_PAGES = 3
+AGREEMENT_THRESHOLD = 0.6        # fewer than this fraction of embedded words confirmed by OCR = unreliable
+SCANNED_IMAGE_FRACTION = 0.7     # an image this much of the page = a scan underneath
+LOW_CONFIDENCE = 60.0            # mean word confidence below this: a person should look at the page
+CACHE_VERSION = "v1"
+
+
+# --------------------------------------------------------------------------- cache
+
+def _cache_dir() -> str:
+    d = os.environ.get("WEBREADER_CACHE_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache")
+    return os.path.join(d, "ocr")
+
+
+_key_memo: Dict[Tuple[str, float, int], str] = {}
+
+
+def file_key(path: str) -> str:
+    """Content hash of the file (memoised by path+mtime+size)."""
+    st = os.stat(path)
+    memo = (path, st.st_mtime, st.st_size)
+    if memo not in _key_memo:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        _key_memo[memo] = h.hexdigest()[:24]
+    return _key_memo[memo]
+
+
+def _cache_path(key: str, page_idx: int, dpi: int, lang: str) -> str:
+    return os.path.join(_cache_dir(), f"{key}_{page_idx}_{dpi}_{lang}_{CACHE_VERSION}.json")
+
+
+def _cache_get(key, page_idx, dpi, lang):
+    try:
+        with open(_cache_path(key, page_idx, dpi, lang)) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _cache_put(key, page_idx, dpi, lang, data):
+    try:
+        os.makedirs(_cache_dir(), exist_ok=True)
+        path = _cache_path(key, page_idx, dpi, lang)
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f)
+        os.replace(tmp, path)  # atomic: a concurrent reader never sees half a file
+    except Exception as e:
+        logger.debug(f"OCR cache write skipped: {e}")
+
+
+# --------------------------------------------------------------------------- OCR
+
+class OcrPage:
+    """Stands in for a pdfplumber page in pdf_auto's reading-order code."""
+
+    def __init__(self, words: List[Dict[str, Any]], width: float, height: float, mean_conf: float, rotation: int = 0):
+        self.words, self.width, self.height = words, width, height
+        self.mean_conf, self.rotation = mean_conf, rotation
+
+    def extract_words(self, **_kw) -> List[Dict[str, Any]]:
+        return [dict(w) for w in self.words]
+
+
+def _preprocess(img: Image.Image) -> Image.Image:
+    """Cheap clean-up that helps poor scans: greyscale, stretch contrast."""
+    g = ImageOps.grayscale(img)
+    return ImageOps.autocontrast(g, cutoff=1)
+
+
+def _otsu_threshold(g: Image.Image) -> int:
+    hist = g.histogram()
+    total = sum(hist)
+    sum_all = sum(i * h for i, h in enumerate(hist))
+    best, best_t, w0, sum0 = 0.0, 128, 0, 0.0
+    for t in range(256):
+        w0 += hist[t]
+        if w0 == 0:
+            continue
+        w1 = total - w0
+        if w1 == 0:
+            break
+        sum0 += t * hist[t]
+        m0, m1 = sum0 / w0, (sum_all - sum0) / w1
+        var = w0 * w1 * (m0 - m1) ** 2
+        if var > best:
+            best, best_t = var, t
+    return best_t
+
+
+def _clean(img: Image.Image) -> Image.Image:
+    """Second-attempt clean-up for poor scans: median-filter speckle/compression noise, then binarise."""
+    g = ImageOps.grayscale(img).filter(ImageFilter.MedianFilter(5))
+    t = _otsu_threshold(g)
+    return g.point(lambda v: 255 if v > t else 0)
+
+
+def _rotation(img: Image.Image) -> int:
+    """90-degree-multiple rotation needed to make the page upright (tesseract OSD); 0 if unsure."""
+    try:
+        osd = pytesseract.image_to_osd(img, output_type=pytesseract.Output.DICT)
+        if float(osd.get("orientation_conf", 0)) >= 2.0:
+            return int(osd.get("rotate", 0)) % 360
+    except Exception:
+        pass
+    return 0
+
+
+def _run(img: Image.Image, dpi: int, lang: str):
+    data = pytesseract.image_to_data(img, lang=lang, config="--psm 3", output_type=pytesseract.Output.DICT)
+    scale = 72.0 / dpi
+    words: List[Dict[str, Any]] = []
+    confs: List[float] = []
+    for i, text in enumerate(data["text"]):
+        text = (text or "").strip()
+        try:
+            conf = float(data["conf"][i])
+        except (TypeError, ValueError):
+            conf = -1.0
+        if not text or conf < 0:
+            continue
+        x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
+        words.append({"text": text, "x0": x * scale, "x1": (x + w) * scale, "top": y * scale, "bottom": (y + h) * scale,
+                      "size": h * scale, "fontname": "", "conf": conf})
+        confs.append(conf)
+    mean = statistics.fmean(confs) if confs else 0.0
+    return words, mean, sum(confs), img.width * scale, img.height * scale
+
+
+RETRY_BELOW = 75.0   # mean confidence under which a second, cleaned-up attempt is made
+
+
+def ocr_image_words(img: Image.Image, dpi: int, lang: str = OCR_LANG) -> OcrPage:
+    first = _preprocess(img)
+    rot = _rotation(first)
+    if rot:
+        first = first.rotate(-rot, expand=True)  # PIL rotates counter-clockwise; OSD's "rotate" is clockwise
+    words, mean, total_conf, w, h = _run(first, dpi, lang)
+    if mean < RETRY_BELOW:
+        # Poor scan (noise, blur, heavy compression): try again on a cleaned-up copy, keep the better result.
+        second = _clean(img)
+        if rot:
+            second = second.rotate(-rot, expand=True)
+        w2 = _run(second, dpi, lang)
+        if w2[2] > total_conf:  # more total confidence = more words read, more surely
+            words, mean, total_conf, w, h = w2
+    return OcrPage(words, w, h, mean, rot)
+
+
+def ocr_page(pdf_page, key: str, dpi: int = OCR_DPI, lang: str = OCR_LANG) -> OcrPage:
+    """OCR one pdfplumber page (cached by file hash + page + dpi + language)."""
+    idx = pdf_page.page_number - 1
+    hit = _cache_get(key, idx, dpi, lang)
+    if hit is not None:
+        return OcrPage(hit["words"], hit["width"], hit["height"], hit["mean_conf"], hit.get("rotation", 0))
+    img = pdf_page.to_image(resolution=dpi).original
+    res = ocr_image_words(img, dpi, lang)
+    _cache_put(key, idx, dpi, lang, {"words": res.words, "width": res.width, "height": res.height,
+                                     "mean_conf": res.mean_conf, "rotation": res.rotation})
+    return res
+
+
+# --------------------------------------------------------------------------- is the text layer trustworthy?
+
+_CID = re.compile(r"\(cid:\d+\)")
+
+
+def text_layer_quality(text: str) -> Tuple[bool, List[str]]:
+    """Cheap checks for a page's embedded text. Returns (looks_ok, reasons it doesn't)."""
+    chars = [c for c in text if not c.isspace()]
+    n = len(chars)
+    if n == 0:
+        return False, ["no_text"]
+    reasons: List[str] = []
+    cid_chars = sum(len(m) for m in _CID.findall(text))
+    if cid_chars / max(1, len(text)) > 0.02:
+        reasons.append("unmapped_glyphs")
+    bad = sum(1 for c in chars if c == "�" or "" <= c <= "" or (ord(c) < 32))
+    if bad / n > 0.03:
+        reasons.append("garbage_characters")
+    if n >= 40:
+        alpha = sum(1 for c in chars if c.isalpha())
+        digits = sum(1 for c in chars if c.isdigit())
+        if (alpha + digits) / n < 0.5:
+            reasons.append("mostly_symbols")
+        words = text.split()
+        if words:
+            if sum(1 for w in words if len(w) > 30) / len(words) > 0.15:
+                reasons.append("spacing_lost")
+            if len(words) >= 20 and sum(1 for w in words if len(w) == 1 and w.isalpha()) / len(words) > 0.4:
+                reasons.append("letter_spaced")
+    return (not reasons), reasons
+
+
+def is_scanned_page(page) -> bool:
+    area = float(page.width) * float(page.height) or 1.0
+    return any(((im["x1"] - im["x0"]) * (im["bottom"] - im["top"])) >= SCANNED_IMAGE_FRACTION * area for im in page.images)
+
+
+def _tokens(text: str) -> Set[str]:
+    return {w for w in re.findall(r"[a-z]{3,}", text.lower())}
+
+
+def agreement(embedded_text: str, ocr_text: str) -> Optional[float]:
+    """Fraction of the embedded text's words that OCR of the same page also found (None if too little to compare)."""
+    e = _tokens(embedded_text)
+    if len(e) < 8:
+        return None
+    return len(e & _tokens(ocr_text)) / len(e)
+
+
+@dataclass
+class OcrPlan:
+    ocr_pages: Set[int] = field(default_factory=set)                 # 0-based page indexes that must be OCR'd
+    reasons: Dict[int, str] = field(default_factory=dict)
+    agreement: List[float] = field(default_factory=list)             # sampled embedded-vs-OCR agreement
+    unreliable_layer: bool = False                                    # searchable scan whose text doesn't match the image
+    scanned_with_text: List[int] = field(default_factory=list)
+
+
+def _spread(items: List[int], n: int) -> List[int]:
+    if len(items) <= n:
+        return list(items)
+    step = (len(items) - 1) / (n - 1)
+    return [items[round(i * step)] for i in range(n)]
+
+
+def plan_ocr(pdf, key: str, max_pages: int = 400, verify: str = VERIFY_MODE) -> OcrPlan:
+    """Decide which pages need OCR, assuming nothing about the PDF's own text."""
+    plan = OcrPlan()
+    texts: Dict[int, str] = {}
+    for i, page in enumerate(pdf.pages[:max_pages]):
+        text = "".join(c["text"] for c in page.chars)
+        texts[i] = text
+        if not text.strip():
+            # A blank page is not a scan: only OCR if there's something on it to read.
+            if page.images or len(page.curves) + len(page.lines) + len(page.rects) > 20:
+                plan.ocr_pages.add(i); plan.reasons[i] = "no_text"
+            continue
+        ok, why = text_layer_quality(text)
+        if not ok:
+            plan.ocr_pages.add(i); plan.reasons[i] = "garbled:" + ",".join(why)
+        elif is_scanned_page(page):
+            plan.scanned_with_text.append(i)
+
+    if verify != "never" and plan.scanned_with_text:
+        for i in _spread(plan.scanned_with_text, VERIFY_SAMPLE_PAGES):
+            a = agreement(texts[i], page_text_from_ocr(ocr_page(pdf.pages[i], key)))
+            if a is not None:
+                plan.agreement.append(a)
+        if plan.agreement and statistics.median(plan.agreement) < AGREEMENT_THRESHOLD:
+            plan.unreliable_layer = True
+            for i in plan.scanned_with_text:
+                plan.ocr_pages.add(i); plan.reasons[i] = "unreliable_text_layer"
+    return plan
+
+
+# --------------------------------------------------------------------------- text from OCR
+
+def page_text_from_ocr(ocr: OcrPage, repeated: Optional[Set[str]] = None) -> str:
+    """Reading-order text for an OCR'd page, using the same column / paragraph logic as text pages."""
+    from .pdf_auto import _join_lines, reading_order_groups
+    parts = [_join_lines(g) for g in reading_order_groups(ocr, repeated or set())]
+    return "\n\n".join(p for p in parts if p.strip())
