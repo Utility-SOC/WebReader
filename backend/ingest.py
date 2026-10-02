@@ -135,7 +135,7 @@ def _extract(path: str, file_type: str) -> Tuple[str, Optional[Dict[str, Any]]]:
         return process_office(path, file_type)
     if file_type == "pdf":
         from .utils import extract_text_from_pdf_range
-        text, _images = extract_text_from_pdf_range(path, 1)
+        text, _images = extract_text_from_pdf_range(path, 1, ocr_verify_pages=3)   # ingestion is in the background: verify more
         return text, process_pdf_accessibility(path)
     if file_type == "txt":
         with open(path, "r", encoding="utf-8", errors="ignore") as f:

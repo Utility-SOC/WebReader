@@ -161,6 +161,9 @@ things manually or debugging):
 | `WEBREADER_EMBEDDED` | unset | Set to `1` to run Celery tasks in-process with no Redis/worker needed (used by the desktop build) |
 | `WEBREADER_DATA_DIR` | next to the source | Where the desktop app stores its SQLite database and settings |
 | `WEBREADER_CAPTION_PROVIDER`, `WEBREADER_LLM_MODEL`, `WEBREADER_LLM_API_KEY`, `WEBREADER_LLM_BASE_URL` | `local` | See [AI providers](#ai-providers-image-captioning) |
+| `WEBREADER_OCR_DPI`, `WEBREADER_OCR_LANG` | `200`, `eng` | Resolution and language for the OCR fallback (tesseract) used when a PDF has no usable text layer |
+| `WEBREADER_OCR_VERIFY` | `auto` | `auto` / `always` / `never`: whether a suspicious or scanned PDF's text layer is checked against OCR of a few sampled pages |
+| `WEBREADER_UPLOAD_ANALYSIS` | unset | Set to `1` to run the (slower) accessibility analysis on PDFs you upload to read; the library always runs it |
 | `ML_MEM_LIMIT` | `4g` | Docker Compose only — memory cap for the backend/worker containers; auto-written to `.env` by `scripts/detect-ml-mem-limit.sh` |
 
 ## Basic Tutorial

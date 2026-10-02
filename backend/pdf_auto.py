@@ -42,6 +42,19 @@ _PAGE_NUM_RE = re.compile(
 
 _HYPHENS = ("-", "‐", "‑", "­")
 
+# Some PDFs map their space glyph to a Unicode NON-character (U+FFFF, U+FFFE, U+FDD0-FDEF) through a broken font
+# encoding. The text is fine but the words are no longer separated, so whole lines come out as one giant "word".
+_NONCHARS = re.compile("[\ufffe\uffff\ufdd0-\ufdef]+")
+
+
+def replace_nonchars(text: str) -> str:
+    """Turn those non-characters into spaces (so they separate words), leaving everything else as it was."""
+    return _NONCHARS.sub(" ", text)
+
+
+def clean_text(text: str) -> str:
+    return re.sub(r"[ \t]+", " ", replace_nonchars(text)).strip()
+
 
 def _normalize(text: str) -> str:
     """Normalize a line for repeat detection: digits and punctuation are removed
@@ -73,7 +86,7 @@ def _lines_from_words(words: List[Dict[str, Any]], y_tolerance: float = 3.0) -> 
             })
     for line in lines:
         line["words"].sort(key=lambda w: w["x0"])
-        line["text"] = " ".join(w["text"] for w in line["words"])
+        line["text"] = clean_text(" ".join(w["text"] for w in line["words"]))
     return lines
 
 

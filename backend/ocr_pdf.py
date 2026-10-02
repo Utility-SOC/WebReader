@@ -28,10 +28,11 @@ from PIL import Image, ImageFilter, ImageOps
 
 logger = logging.getLogger("SpeedReaderUtils")
 
-OCR_DPI = int(os.environ.get("WEBREADER_OCR_DPI", "300"))
+OCR_DPI = int(os.environ.get("WEBREADER_OCR_DPI", "200"))     # 200 reads normal print fine and is ~2x faster than 300
+VERIFY_DPI = 150                                                # enough to compare words when checking a text layer
 OCR_LANG = os.environ.get("WEBREADER_OCR_LANG", "eng")
 VERIFY_MODE = os.environ.get("WEBREADER_OCR_VERIFY", "auto").strip().lower()   # auto | always | never
-VERIFY_SAMPLE_PAGES = 3
+VERIFY_SAMPLE_PAGES = 3          # library ingestion; interactive reading uses 1 (OCR is slow on modest hardware)
 AGREEMENT_THRESHOLD = 0.6        # fewer than this fraction of embedded words confirmed by OCR = unreliable
 SCANNED_IMAGE_FRACTION = 0.7     # an image this much of the page = a scan underneath
 LOW_CONFIDENCE = 60.0            # mean word confidence below this: a person should look at the page
@@ -163,24 +164,31 @@ def _run(img: Image.Image, dpi: int, lang: str):
     return words, mean, sum(confs), img.width * scale, img.height * scale
 
 
-RETRY_BELOW = 75.0   # mean confidence under which a second, cleaned-up attempt is made
+GOOD_CONFIDENCE = 70.0   # a first pass at least this confident is accepted; only poorer pages get extra attempts
 
 
 def ocr_image_words(img: Image.Image, dpi: int, lang: str = OCR_LANG) -> OcrPage:
+    """OCR one page image. Cheap path first: a confident first pass is accepted as is. Only a page that reads poorly
+    gets the extra work (orientation detection, then a denoised/binarised retry), keeping the better result."""
     first = _preprocess(img)
-    rot = _rotation(first)
-    if rot:
-        first = first.rotate(-rot, expand=True)  # PIL rotates counter-clockwise; OSD's "rotate" is clockwise
     words, mean, total_conf, w, h = _run(first, dpi, lang)
-    if mean < RETRY_BELOW:
-        # Poor scan (noise, blur, heavy compression): try again on a cleaned-up copy, keep the better result.
+    best, best_rot = (words, mean, total_conf, w, h), 0
+    if mean >= GOOD_CONFIDENCE:
+        return OcrPage(words, w, h, mean, 0)
+
+    rot = _rotation(first)                       # upside-down / sideways scans read as low-confidence junk
+    if rot:
+        cand = _run(first.rotate(-rot, expand=True), dpi, lang)   # PIL rotates counter-clockwise; OSD's "rotate" is clockwise
+        if cand[2] > best[2]:
+            best, best_rot = cand, rot
+    if best[1] < GOOD_CONFIDENCE:                # noise, blur, heavy compression: clean up and try again
         second = _clean(img)
-        if rot:
-            second = second.rotate(-rot, expand=True)
-        w2 = _run(second, dpi, lang)
-        if w2[2] > total_conf:  # more total confidence = more words read, more surely
-            words, mean, total_conf, w, h = w2
-    return OcrPage(words, w, h, mean, rot)
+        if best_rot:
+            second = second.rotate(-best_rot, expand=True)
+        cand = _run(second, dpi, lang)
+        if cand[2] > best[2]:                    # more total confidence = more words read, more surely
+            best = cand
+    return OcrPage(best[0], best[3], best[4], best[1], best_rot)
 
 
 def ocr_page(pdf_page, key: str, dpi: int = OCR_DPI, lang: str = OCR_LANG) -> OcrPage:
@@ -201,8 +209,26 @@ def ocr_page(pdf_page, key: str, dpi: int = OCR_DPI, lang: str = OCR_LANG) -> Oc
 _CID = re.compile(r"\(cid:\d+\)")
 
 
+_LEADERS = re.compile(r"[._\-=*~\u2014\u2013\u2026|/\\]{3,}")   # "______" signature lines, dotted leaders, rules
+
+# Signals that are certain enough to OCR on sight, vs. ones that are only suspicious. A wrong "OCR it" costs
+# minutes per page on modest hardware, so suspicious pages are verified (see plan_ocr) instead of being OCR'd blindly.
+STRONG_REASONS = {"no_text", "unmapped_glyphs", "garbage_characters"}
+
+
+def page_text(page) -> str:
+    """A page's text WITH word spacing. (Joining pdfplumber's characters directly glues words together on the many
+    PDFs that position words instead of storing space characters -- which once made nearly every page look 'garbled'.)"""
+    from .pdf_auto import replace_nonchars
+    try:
+        return replace_nonchars(page.extract_text(x_tolerance=1.5, y_tolerance=3) or "")
+    except Exception:
+        return ""
+
+
 def text_layer_quality(text: str) -> Tuple[bool, List[str]]:
-    """Cheap checks for a page's embedded text. Returns (looks_ok, reasons it doesn't)."""
+    """Cheap checks for a page's embedded text (which must already have word spacing -- see page_text).
+    Returns (looks_ok, reasons it doesn't). Reasons in STRONG_REASONS are certain; the rest are only suspicious."""
     chars = [c for c in text if not c.isspace()]
     n = len(chars)
     if n == 0:
@@ -211,15 +237,15 @@ def text_layer_quality(text: str) -> Tuple[bool, List[str]]:
     cid_chars = sum(len(m) for m in _CID.findall(text))
     if cid_chars / max(1, len(text)) > 0.02:
         reasons.append("unmapped_glyphs")
-    bad = sum(1 for c in chars if c == "�" or "" <= c <= "" or (ord(c) < 32))
+    bad = sum(1 for c in chars if c == "\ufffd" or "\ue000" <= c <= "\uf8ff" or (ord(c) < 32))
     if bad / n > 0.03:
         reasons.append("garbage_characters")
-    if n >= 40:
-        alpha = sum(1 for c in chars if c.isalpha())
-        digits = sum(1 for c in chars if c.isdigit())
-        if (alpha + digits) / n < 0.5:
+    if n >= 80:
+        stripped = _LEADERS.sub(" ", text)            # blanks and leaders are normal in forms and leases
+        sc = [c for c in stripped if not c.isspace()]
+        if len(sc) >= 80 and sum(1 for c in sc if c.isalnum()) / len(sc) < 0.4:
             reasons.append("mostly_symbols")
-        words = text.split()
+        words = stripped.split()
         if words:
             if sum(1 for w in words if len(w) > 30) / len(words) > 0.15:
                 reasons.append("spacing_lost")
@@ -239,10 +265,14 @@ def _tokens(text: str) -> Set[str]:
 
 def agreement(embedded_text: str, ocr_text: str) -> Optional[float]:
     """Fraction of the embedded text's words that OCR of the same page also found (None if too little to compare)."""
-    e = _tokens(embedded_text)
+    e, o = _tokens(embedded_text), _tokens(ocr_text)
     if len(e) < 8:
+        # Lots of embedded text but almost no recognisable words in it (spaces lost, glued together) while OCR of the
+        # same page finds plenty: the text layer is unusable, which is a clear answer, not "too little to compare".
+        if len(embedded_text.strip()) >= 80 and len(o) >= 8:
+            return 0.0
         return None
-    return len(e & _tokens(ocr_text)) / len(e)
+    return len(e & o) / len(e)
 
 
 @dataclass
@@ -252,21 +282,36 @@ class OcrPlan:
     agreement: List[float] = field(default_factory=list)             # sampled embedded-vs-OCR agreement
     unreliable_layer: bool = False                                    # searchable scan whose text doesn't match the image
     scanned_with_text: List[int] = field(default_factory=list)
+    suspect_pages: List[int] = field(default_factory=list)           # looked odd, but OCR showed the text layer is fine
 
 
 def _spread(items: List[int], n: int) -> List[int]:
     if len(items) <= n:
         return list(items)
+    if n <= 1:
+        return [items[len(items) // 2]]      # one sample: take the middle of the document, not the cover page
     step = (len(items) - 1) / (n - 1)
     return [items[round(i * step)] for i in range(n)]
 
 
-def plan_ocr(pdf, key: str, max_pages: int = 400, verify: str = VERIFY_MODE) -> OcrPlan:
-    """Decide which pages need OCR, assuming nothing about the PDF's own text."""
+def plan_ocr(pdf, key: str, max_pages: int = 400, verify: str = VERIFY_MODE, pages: Optional[List[int]] = None,
+             sample_pages: int = VERIFY_SAMPLE_PAGES) -> OcrPlan:
+    """Decide which pages need OCR, assuming nothing about the PDF's own text -- but without OCR-ing on a hunch.
+
+    Certain signals (no text layer on a page with content, unmapped glyphs, garbage characters) mean OCR. Merely
+    suspicious pages, and "searchable scans" (a page image with a text layer on top), are checked by OCR-ing a few
+    sampled pages at low resolution and comparing words: only if the text layer disagrees with the image are all of
+    them re-OCR'd. OCR is slow on modest hardware, so a wrong guess has to be expensive to make, not cheap.
+
+    pages: 0-based page indexes to plan for (default: the first max_pages).
+    """
     plan = OcrPlan()
     texts: Dict[int, str] = {}
-    for i, page in enumerate(pdf.pages[:max_pages]):
-        text = "".join(c["text"] for c in page.chars)
+    suspects: List[int] = []
+    indexes = pages if pages is not None else list(range(min(len(pdf.pages), max_pages)))
+    for i in indexes:
+        page = pdf.pages[i]
+        text = page_text(page)
         texts[i] = text
         if not text.strip():
             # A blank page is not a scan: only OCR if there's something on it to read.
@@ -274,20 +319,28 @@ def plan_ocr(pdf, key: str, max_pages: int = 400, verify: str = VERIFY_MODE) -> 
                 plan.ocr_pages.add(i); plan.reasons[i] = "no_text"
             continue
         ok, why = text_layer_quality(text)
-        if not ok:
+        if not ok and STRONG_REASONS & set(why):
             plan.ocr_pages.add(i); plan.reasons[i] = "garbled:" + ",".join(why)
+        elif not ok:
+            suspects.append(i); plan.reasons[i] = "suspicious:" + ",".join(why)
         elif is_scanned_page(page):
             plan.scanned_with_text.append(i)
 
-    if verify != "never" and plan.scanned_with_text:
-        for i in _spread(plan.scanned_with_text, VERIFY_SAMPLE_PAGES):
-            a = agreement(texts[i], page_text_from_ocr(ocr_page(pdf.pages[i], key)))
+    to_check = sorted(set(suspects) | set(plan.scanned_with_text))
+    plan.suspect_pages = suspects
+    if verify != "never" and to_check:
+        for i in _spread(to_check, max(1, sample_pages)):
+            a = agreement(texts[i], page_text_from_ocr(ocr_page(pdf.pages[i], key, dpi=VERIFY_DPI)))
             if a is not None:
                 plan.agreement.append(a)
         if plan.agreement and statistics.median(plan.agreement) < AGREEMENT_THRESHOLD:
             plan.unreliable_layer = True
-            for i in plan.scanned_with_text:
+            for i in to_check:
                 plan.ocr_pages.add(i); plan.reasons[i] = "unreliable_text_layer"
+    # Suspects that were not shown to be bad (or couldn't be checked) are trusted: their text layer is used as is.
+    for i in suspects:
+        if i not in plan.ocr_pages:
+            plan.reasons.pop(i, None)
     return plan
 
 
