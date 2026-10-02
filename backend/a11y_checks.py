@@ -106,22 +106,22 @@ def _check_figures(s, issues):
         if b.kind != FIGURE or b.decorative:
             continue
         alt = (b.alt_text or "").strip()
-        label = f"{b.figure_type or 'image'}" + (f" '{b.name}'" if b.name else "")
+        label = f"{b.figure_type or 'image'}" + (f' "{b.name}"' if b.name else "")
         if not alt:
             issues.append(Issue("FIG_ALT_MISSING", ERROR, f"The {label} has no alternative text.",
                                 b.location, "1.1.1", "suggest", {"figure_type": b.figure_type, "name": b.name}))
         elif _FILENAME_ALT.search(alt) or _GENERIC_NAME.match(alt):
             issues.append(Issue("FIG_ALT_PLACEHOLDER", ERROR,
-                                f"The {label}'s alternative text ('{alt}') looks like a file or shape name, not a description.",
+                                f'The alternative text of the {label} ("{alt}") looks like a file or shape name, not a description.',
                                 b.location, "1.1.1", "suggest", {"alt": alt}))
         else:
             if len(alt) > MAX_ALT_CHARS:
                 issues.append(Issue("FIG_ALT_LONG", WARNING,
-                                    f"The {label}'s alternative text is {len(alt)} characters; consider a short alt text plus a longer description.",
+                                    f"The alternative text of the {label} is {len(alt)} characters; consider a short alt text plus a longer description.",
                                     b.location, "1.1.1", "manual", {"length": len(alt)}))
             if _REDUNDANT_PREFIX.match(alt):
                 issues.append(Issue("FIG_ALT_REDUNDANT", INFO,
-                                    f"The {label}'s alternative text starts with '{alt.split()[0]} of'; screen readers already announce it as an image.",
+                                    f"The alternative text of the {label} starts with '{alt.split()[0]} of'; screen readers already announce it as an image.",
                                     b.location, "1.1.1", "auto"))
 
 

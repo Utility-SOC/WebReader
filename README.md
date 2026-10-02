@@ -131,6 +131,16 @@ python -m backend.library_cli withdraw county --path public/notes.txt
 - **Public API** (what a reading-room visitor can reach, with `WEBREADER_MODE=reading_room`): `GET /library/search`, `/library/facets`, `/library/items/{id}`, `/library/items/{id}/text`. It returns only released items and never exposes repository paths. Search terms are not logged or stored.
 - Repositories are read through connectors (a plain folder today); S3, SFTP and SharePoint plug into the same interface.
 
+### Accessibility report (admin)
+
+```bash
+python -m backend.library_cli report demo --html report.html --csv issues.csv
+```
+
+Prints a summary and writes a **single, self-contained HTML page** (no scripts, no external requests, strict content-security policy; light/dark; keyboard- and screen-reader-friendly) and a CSV with one row per issue. It shows what to fix first (with plain-language "why it matters" and "how to fix it" for each problem), every document with its issues, files that could not be processed, and titles that software inferred and a person should review. Issues are marked by how they can be fixed: automatically, with a software suggestion a person confirms, or by a person.
+
+It lists repository paths and titles, so it is **admin-only by design (a file, not a web page)**: keep it internal. It reports what the automatic checks found and is not a compliance claim. Check the page itself with `./scripts/report-check.sh report.html`.
+
 ### Try it with sample documents
 
 ```bash

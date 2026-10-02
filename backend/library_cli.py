@@ -10,6 +10,9 @@ anonymous visitor to reach.
   python -m backend.library_cli release NAME [--path P ...]
   python -m backend.library_cli withdraw NAME --path P ...
   python -m backend.library_cli search "water rights" [--all]
+  python -m backend.library_cli report [NAME] [--html report.html] [--csv issues.csv] [--json report.json]
+        # accessibility report for one source (or all): a text summary, plus an accessible self-contained HTML page
+        # and/or a CSV of every issue. It lists repository paths: keep it internal.
 """
 
 import argparse
@@ -54,6 +57,7 @@ def main(argv=None):
     r = sub.add_parser("release"); r.add_argument("name"); r.add_argument("--path", action="append")
     w = sub.add_parser("withdraw"); w.add_argument("name"); w.add_argument("--path", action="append", required=True)
     q = sub.add_parser("search"); q.add_argument("query"); q.add_argument("--all", action="store_true", help="include held items")
+    rp = sub.add_parser("report"); rp.add_argument("name", nargs="?"); rp.add_argument("--html"); rp.add_argument("--csv"); rp.add_argument("--json")
     args = ap.parse_args(argv)
 
     db = _db()
@@ -85,6 +89,19 @@ def main(argv=None):
         print(f"Released {release(db, _source(db, args.name), args.path)} item(s).")
     elif args.cmd == "withdraw":
         print(f"Withdrew {withdraw(db, _source(db, args.name), args.path)} item(s).")
+    elif args.cmd == "report":
+        from . import report as rpt
+        try:
+            data = rpt.build_report(db, args.name)
+        except ValueError as e:
+            sys.exit(str(e))
+        for path, render, label in ((args.html, rpt.render_html, "HTML report"), (args.csv, rpt.render_csv, "CSV"),
+                                    (args.json, lambda d: json.dumps(d, indent=2, default=str), "JSON")):
+            if path:
+                with open(path, "w", encoding="utf-8", newline="") as f:
+                    f.write(render(data))
+                print(f"Wrote {label}: {path}")
+        print(rpt.render_text(data))
     elif args.cmd == "search":
         res = search.search(db, args.query, include_hidden=args.all)
         print(f"{res['total']} result(s)")
