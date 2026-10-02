@@ -139,6 +139,52 @@ def process_text(text: str) -> List[str]:
                 words.extend(cleaned.split())
     return words
 
+def box_to_pdf_rect(box: Dict[str, Any], page) -> Tuple[float, float, float, float]:
+    """Convert a manual-layout box to a PDF-space (x0, top, x1, bottom) rect, clamped to the page."""
+    x = float(box['x'])
+    y = float(box['y'])
+    w = float(box['w'])
+    h = float(box['h'])
+
+    if box.get('relative'):
+        # Relative (0.0 - 1.0)
+        x0 = x * page.width
+        top = y * page.height
+        x1 = (x + w) * page.width
+        bottom = (y + h) * page.height
+    else:
+        # Legacy 100 DPI
+        scale = 0.72
+        x0 = x * scale
+        top = y * scale
+        x1 = (x + w) * scale
+        bottom = (y + h) * scale
+
+    # Clamp to page dimensions (Snap to edge)
+    x0 = max(0, min(float(page.width), x0))
+    top = max(0, min(float(page.height), top))
+    x1 = max(0, min(float(page.width), x1))
+    bottom = max(0, min(float(page.height), bottom))
+    return x0, top, x1, bottom
+
+
+def box_text_preview(path: str, page_idx: int, box: Dict[str, Any], n: int = 5) -> Dict[str, Any]:
+    """Text inside one manual box: word count plus its first and last n words (OCR if no text layer)."""
+    with pdfplumber.open(path) as pdf:
+        if page_idx < 0 or page_idx >= len(pdf.pages):
+            raise IndexError("page out of range")
+        page = pdf.pages[page_idx]
+        x0, top, x1, bottom = box_to_pdf_rect(box, page)
+        if x1 <= x0 or bottom <= top:
+            return {"word_count": 0, "first": "", "last": ""}
+        cropped = page.crop((x0, top, x1, bottom))
+        txt = cropped.extract_text(x_tolerance=1) or ""
+        if not txt.strip():
+            txt = extract_text_with_ocr(cropped.to_image(resolution=300).original)
+    words = process_text(txt)
+    return {"word_count": len(words), "first": " ".join(words[:n]), "last": " ".join(words[-n:])}
+
+
 def extract_text_from_pdf_range(
     path: str, 
     start_page: int, 
@@ -204,26 +250,7 @@ def extract_text_from_pdf_range(
                         w = float(box['w'])
                         h = float(box['h'])
                         
-                        # Calculate PDF coordinates
-                        if box.get('relative'):
-                             # Relative (0.0 - 1.0)
-                            x0 = x * page.width
-                            top = y * page.height
-                            x1 = (x + w) * page.width
-                            bottom = (y + h) * page.height
-                        else:
-                            # Legacy 100 DPI
-                            scale = 0.72
-                            x0 = x * scale
-                            top = y * scale
-                            x1 = (x + w) * scale
-                            bottom = (y + h) * scale
-                        
-                        # Clamp to page dimensions (Snap to edge)
-                        x0 = max(0, min(float(page.width), x0))
-                        top = max(0, min(float(page.height), top))
-                        x1 = max(0, min(float(page.width), x1))
-                        bottom = max(0, min(float(page.height), bottom))
+                        x0, top, x1, bottom = box_to_pdf_rect(box, page)
 
                         if x1 <= x0 or bottom <= top: continue
                         crop_box = (x0, top, x1, bottom)
