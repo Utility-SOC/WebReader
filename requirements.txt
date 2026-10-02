@@ -3,7 +3,6 @@ uvicorn
 python-multipart
 pdfplumber
 python-docx
-EbookLib
 beautifulsoup4
 Pillow
 requests

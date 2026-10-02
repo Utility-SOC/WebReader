@@ -87,6 +87,13 @@ jobs:
           Get-ChildItem $tess -Recurse -Include "*LICENSE*","*license*","*COPYING*" -File -ErrorAction SilentlyContinue |
             ForEach-Object { Copy-Item $_.FullName ("THIRD_PARTY_LICENSES/tesseract-dist-" + $_.Name) -Force }
 
+      - name: Generate Python license texts (bundled into the desktop zip)
+        shell: pwsh
+        run: |
+          pip install pip-licenses
+          pip-licenses --format=plain-vertical --with-license-file --no-license-path --with-notice-file --ignore-packages pip-licenses prettytable wcwidth |
+            Out-File -Encoding utf8 THIRD_PARTY_LICENSES/python-license-texts.txt
+
       - name: Build desktop executable
         run: pyinstaller webreader.spec
 

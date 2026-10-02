@@ -19,6 +19,15 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 # Copy source code (kept as the `backend` package so its relative imports resolve)
 COPY backend/ backend/
 
+# License notices: the repo's own notice files, plus the full license text of every
+# installed Python package (needed when redistributing this image).
+COPY LICENSE THIRD_PARTY_LICENSES/ /app/THIRD_PARTY_LICENSES/
+RUN pip install --no-cache-dir pip-licenses \
+    && pip-licenses --format=plain-vertical --with-license-file --no-license-path --with-notice-file \
+         --ignore-packages pip-licenses prettytable wcwidth \
+         > /app/THIRD_PARTY_LICENSES/python-license-texts.txt \
+    && pip uninstall -y pip-licenses prettytable wcwidth
+
 # Expose port
 EXPOSE 8000
 

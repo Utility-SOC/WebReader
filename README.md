@@ -221,10 +221,13 @@ The primary interface provides several ways to tailor WebReader to your cognitiv
 
 WebReader is MIT licensed (see `LICENSE`).
 
-See `AI_DISCLOSURE.md` for a note on AI-assisted contributions to this
-project's code, docs, and deployment configuration.
+Third-party components and their licenses are listed in
+[`THIRD_PARTY_LICENSES/THIRD_PARTY_NOTICES.md`](THIRD_PARTY_LICENSES/THIRD_PARTY_NOTICES.md)
+(generated from the real package metadata by `scripts/generate-notices.sh`).
+Full license texts ship in the `THIRD_PARTY_LICENSES` folder of every desktop
+release and inside the Docker image at `/app/THIRD_PARTY_LICENSES/`. This
+includes [Tesseract OCR](https://github.com/tesseract-ocr/tesseract)
+(Apache License 2.0) and its Leptonica dependency, the bundled fonts (SIL Open
+Font License 1.1), and the optional image-captioning model.
 
-The desktop build bundles [Tesseract OCR](https://github.com/tesseract-ocr/tesseract)
-(Apache License 2.0) and its Leptonica dependency for built-in OCR. License
-texts and attribution ship in the `THIRD_PARTY_LICENSES` folder included with
-every desktop release.
+See `AI_DISCLOSURE.md` for a note on AI in this project.
