@@ -71,7 +71,9 @@ def process_document_core(task_id: str, document_id: int, manual_boxes: dict = N
              # Basic text fallback detection
              pass 
 
-        if file_type == "pdf":
+        # The accessibility analysis (layout inference, tag inspection, extra OCR) is for the library; someone
+        # waiting to read a document shouldn't pay for it. WEBREADER_UPLOAD_ANALYSIS=1 turns it back on.
+        if file_type == "pdf" and os.environ.get("WEBREADER_UPLOAD_ANALYSIS", "").strip() == "1":
             try:
                 accessibility = process_pdf_accessibility(path)
             except Exception as e:  # a11y facts are an enhancement; never fail the read over them

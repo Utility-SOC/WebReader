@@ -64,6 +64,13 @@ class Page:
         self.ops.append(f"BT /F1 {size} Tf {x} {y} Td ({_esc(s)}) Tj ET")
         self.ops.append("EMC")
 
+    def words(self, x, top, size, words, gap=4.0, bold=False):
+        """Place each word separately, with NO space characters between them (like many real PDFs do)."""
+        for w in words:
+            self.text(x, top, size, w, bold)
+            x += len(w) * size * 0.52 + gap
+        return self
+
     def lines(self, x, top, size, strings, leading=None, bold=False):
         leading = leading or size * 1.3
         for i, s in enumerate(strings):

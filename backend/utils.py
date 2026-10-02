@@ -23,11 +23,11 @@ import pytesseract
 from pytesseract import Output
 
 try:
-    from .pdf_auto import build_repeated_lines, extract_page_smart
+    from .pdf_auto import build_repeated_lines, extract_page_smart, replace_nonchars
     from .captioning import caption_image
     from . import ocr_pdf
 except ImportError:  # allow running outside package context (celery worker in /app)
-    from pdf_auto import build_repeated_lines, extract_page_smart
+    from pdf_auto import build_repeated_lines, extract_page_smart, replace_nonchars
     from captioning import caption_image
     import ocr_pdf
 
@@ -180,7 +180,7 @@ def box_text_preview(path: str, page_idx: int, box: Dict[str, Any], n: int = 5) 
         if x1 <= x0 or bottom <= top:
             return {"word_count": 0, "first": "", "last": ""}
         cropped = page.crop((x0, top, x1, bottom))
-        txt = cropped.extract_text(x_tolerance=1) or ""
+        txt = replace_nonchars(cropped.extract_text(x_tolerance=1) or "")
         if not txt.strip():
             txt = extract_text_with_ocr(cropped.to_image(resolution=300).original)
     words = process_text(txt)
@@ -192,7 +192,8 @@ def extract_text_from_pdf_range(
     start_page: int, 
     end_page: Optional[int] = None, 
     manual_boxes: Dict[str, Any] = None,
-    force_ocr: bool = False
+    force_ocr: bool = False,
+    ocr_verify_pages: int = 1
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Extract text and images from a range of pages in a PDF.
@@ -217,7 +218,8 @@ def extract_text_from_pdf_range(
             ocr_key = ocr_pdf.file_key(path)
             plan = ocr_pdf.OcrPlan()
             try:
-                plan = ocr_pdf.plan_ocr(pdf, ocr_key, max_pages=total_pages)
+                # Only the requested range; verification samples 1 page when someone is waiting (3 for library ingestion).
+                plan = ocr_pdf.plan_ocr(pdf, ocr_key, pages=list(range(start_page - 1, end_page)), sample_pages=ocr_verify_pages)
             except Exception as plan_e:
                 logger.warning(f"OCR planning failed, using the text layer as-is: {plan_e}")
 
@@ -239,7 +241,7 @@ def extract_text_from_pdf_range(
                             logger.warning(f"Smart extraction failed on page {i+1}, falling back: {smart_e}")
                             txt = ""
                         if not txt or not txt.strip():
-                            txt = page.extract_text(layout=True, x_tolerance=1)
+                            txt = replace_nonchars(page.extract_text(layout=True, x_tolerance=1) or "")
 
                     if txt and txt.strip():
                         extracted_text += txt + "\n"
@@ -274,7 +276,7 @@ def extract_text_from_pdf_range(
                             if b_type == 'text':
                                 txt = ""
                                 if not (force_ocr or i in plan.ocr_pages):
-                                    txt = cropped.extract_text(layout=True, x_tolerance=1)
+                                    txt = replace_nonchars(cropped.extract_text(layout=True, x_tolerance=1) or "")
                                 
                                 if txt and txt.strip():
                                     extracted_text += txt + "\n"
