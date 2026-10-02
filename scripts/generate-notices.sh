@@ -10,7 +10,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 echo "[1/3] Python packages (builds the backend image)..."
 docker build -q -f backend/Dockerfile -t webreader-notices . >/dev/null
 docker run --rm webreader-notices sh -c \
-  'pip install -q pip-licenses >/dev/null 2>&1; pip-licenses --format=csv --with-urls --ignore-packages pip-licenses prettytable wcwidth tomli pip setuptools wheel 2>/dev/null' \
+  'pip install -q pip-licenses >/dev/null 2>&1; pip-licenses --format=csv --with-urls --with-system --ignore-packages pip-licenses prettytable 2>/dev/null' \
   > "$TMP/py.csv"
 
 echo "[2/3] npm packages..."
@@ -23,6 +23,14 @@ import csv, io, json, sys
 py = list(csv.DictReader(io.StringIO(open(sys.argv[1]).read().strip())))
 npm = json.load(open(sys.argv[2]))
 COPYLEFT = ("GPL", "MPL", "EPL")
+# Packages whose metadata omits the license; verified against their upstream repositories.
+OVERRIDES = {"setuptools": "MIT"}
+for r in py:
+    if r["License"].strip().upper() in ("UNKNOWN", "") and r["Name"] in OVERRIDES:
+        r["License"] = OVERRIDES[r["Name"]]
+unknown = [r["Name"] for r in py if r["License"].strip().upper() in ("UNKNOWN", "")]
+if unknown:
+    sys.exit("License unknown for: " + ", ".join(unknown) + " -- add to OVERRIDES after checking upstream")
 
 def row(*c): return "| " + " | ".join(str(x).replace("|", "/") for x in c) + " |"
 

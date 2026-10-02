@@ -73,6 +73,7 @@ situation.
 | pdfminer.six | 20251107 | MIT | https://github.com/pdfminer/pdfminer.six |
 | pdfplumber | 0.11.8 | MIT License | https://github.com/jsvine/pdfplumber |
 | pillow | 11.3.0 | MIT-CMU | https://python-pillow.github.io |
+| pip | 23.0.1 | MIT License | https://pip.pypa.io/ |
 | prompt_toolkit | 3.0.52 | BSD License | https://github.com/prompt-toolkit/python-prompt-toolkit |
 | propcache | 0.4.1 | Apache Software License | https://github.com/aio-libs/propcache |
 | pycparser | 2.23 | BSD License | https://github.com/eliben/pycparser |
@@ -88,6 +89,7 @@ situation.
 | regex | 2026.1.15 | Apache-2.0 AND CNRI-Python | https://github.com/mrabarnett/mrab-regex |
 | requests | 2.32.5 | Apache Software License | https://requests.readthedocs.io |
 | safetensors | 0.7.0 | Apache Software License | https://github.com/huggingface/safetensors |
+| setuptools | 79.0.1 | MIT | https://github.com/pypa/setuptools |
 | six | 1.17.0 | MIT License | https://github.com/benjaminp/six |
 | soupsieve | 2.8.4 | MIT | https://github.com/facelessuser/soupsieve |
 | SQLAlchemy | 2.0.54 | MIT | https://www.sqlalchemy.org |
@@ -97,6 +99,7 @@ situation.
 | tabulate | 0.9.0 | MIT License | https://github.com/astanin/python-tabulate |
 | timm | 1.0.30 | Apache Software License | https://github.com/huggingface/pytorch-image-models |
 | tokenizers | 0.22.2 | Apache Software License | https://github.com/huggingface/tokenizers |
+| tomli | 2.4.1 | MIT | https://github.com/hukkin/tomli |
 | torch | 2.8.0+cpu | BSD License | https://pytorch.org/ |
 | torchvision | 0.23.0+cpu | BSD | https://github.com/pytorch/vision |
 | tqdm | 4.70.1 | MPL-2.0 AND MIT | https://tqdm.github.io |
@@ -108,6 +111,8 @@ situation.
 | urllib3 | 2.6.3 | MIT | https://github.com/urllib3/urllib3/blob/main/CHANGES.rst |
 | uvicorn | 0.39.0 | BSD-3-Clause | https://uvicorn.dev/ |
 | vine | 5.1.0 | BSD License | https://github.com/celery/vine |
+| wcwidth | 0.9.1 | MIT License | https://github.com/jquast/wcwidth |
+| wheel | 0.45.1 | MIT License | https://github.com/pypa/wheel |
 | yarl | 1.22.0 | Apache Software License | https://github.com/aio-libs/yarl |
 
 ## JavaScript packages (frontend, production)

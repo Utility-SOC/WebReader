@@ -23,10 +23,11 @@ COPY backend/ backend/
 # installed Python package (needed when redistributing this image).
 COPY LICENSE THIRD_PARTY_LICENSES/ /app/THIRD_PARTY_LICENSES/
 RUN pip install --no-cache-dir pip-licenses \
-    && pip-licenses --format=plain-vertical --with-license-file --no-license-path --with-notice-file \
-         --ignore-packages pip-licenses prettytable wcwidth \
+    && pip-licenses --format=plain-vertical --with-license-file --no-license-path --with-notice-file --with-system \
+         --ignore-packages pip-licenses prettytable \
          > /app/THIRD_PARTY_LICENSES/python-license-texts.txt \
-    && pip uninstall -y pip-licenses prettytable wcwidth
+    && pip uninstall -y pip-licenses prettytable \
+    && celery --help > /dev/null  # smoke check: the worker's CLI still imports (an over-eager uninstall once broke it)
 
 # Expose port
 EXPOSE 8000

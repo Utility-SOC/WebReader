@@ -91,7 +91,7 @@ jobs:
         shell: pwsh
         run: |
           pip install pip-licenses
-          pip-licenses --format=plain-vertical --with-license-file --no-license-path --with-notice-file --ignore-packages pip-licenses prettytable wcwidth |
+          pip-licenses --format=plain-vertical --with-license-file --no-license-path --with-notice-file --with-system --ignore-packages pip-licenses prettytable |
             Out-File -Encoding utf8 THIRD_PARTY_LICENSES/python-license-texts.txt
 
       - name: Build desktop executable
