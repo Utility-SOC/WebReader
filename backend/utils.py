@@ -25,9 +25,11 @@ from pytesseract import Output
 try:
     from .pdf_auto import build_repeated_lines, extract_page_smart
     from .captioning import caption_image
+    from . import ocr_pdf
 except ImportError:  # allow running outside package context (celery worker in /app)
     from pdf_auto import build_repeated_lines, extract_page_smart
     from captioning import caption_image
+    import ocr_pdf
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -210,15 +212,25 @@ def extract_text_from_pdf_range(
             if end_page is None or end_page > total_pages:
                 end_page = total_pages
 
+            # Don't trust a PDF's own text: plan which pages need OCR (no text layer, garbled
+            # glyphs, or a "searchable scan" whose text doesn't match its image).
+            ocr_key = ocr_pdf.file_key(path)
+            plan = ocr_pdf.OcrPlan()
+            try:
+                plan = ocr_pdf.plan_ocr(pdf, ocr_key, max_pages=total_pages)
+            except Exception as plan_e:
+                logger.warning(f"OCR planning failed, using the text layer as-is: {plan_e}")
+
             for i in range(start_page - 1, end_page):
                 page = pdf.pages[i]
+                use_ocr = force_ocr or i in plan.ocr_pages
 
                 boxes = manual_boxes.get(str(i)) # keys are strings in JSON
 
                 if not boxes:
                     # AUTOMATIC MODE (smart: columns, header/footer & page-number removal)
                     txt = ""
-                    if not force_ocr:
+                    if not use_ocr:
                         try:
                             if repeated_lines is None:
                                 repeated_lines = build_repeated_lines(pdf)
@@ -233,10 +245,12 @@ def extract_text_from_pdf_range(
                         extracted_text += txt + "\n"
                     else:
                         # Fallback/Force OCR
-                        logger.info(f"Running OCR on page {i+1}...")
+                        logger.info(f"Running OCR on page {i+1} ({plan.reasons.get(i, 'requested')})...")
                         try:
-                            im = page.to_image(resolution=300).original
-                            ocr_txt = extract_text_with_ocr(im)
+                            # Layout-aware: OCR words go through the same column/reading-order logic as text pages
+                            ocr_txt = ocr_pdf.page_text_from_ocr(ocr_pdf.ocr_page(page, ocr_key))
+                            if not ocr_txt.strip():
+                                ocr_txt = extract_text_with_ocr(page.to_image(resolution=300).original)
                             if ocr_txt.strip():
                                 extracted_text += ocr_txt + "\n"
                         except Exception as e:
@@ -259,7 +273,7 @@ def extract_text_from_pdf_range(
                             cropped = page.crop(crop_box)
                             if b_type == 'text':
                                 txt = ""
-                                if not force_ocr:
+                                if not (force_ocr or i in plan.ocr_pages):
                                     txt = cropped.extract_text(layout=True, x_tolerance=1)
                                 
                                 if txt and txt.strip():

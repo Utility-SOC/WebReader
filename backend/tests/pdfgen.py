@@ -16,13 +16,22 @@ class El:
 class Page:
     def __init__(self):
         self.ops = []
-        self.images = []  # (name, w, h, rgb_bytes)
+        self.images = []  # (name, w, h, bytes[, "gray"])
         self.elements = []   # top-level El objects for this page
         self._mcid = 0
 
-    def text(self, x, top, size, s, bold=False):
+    def text(self, x, top, size, s, bold=False, invisible=False):
         y = PAGE_H - top - size
-        self.ops.append(f"BT /{'F2' if bold else 'F1'} {size} Tf {x} {y} Td ({_esc(s)}) Tj ET")
+        tr = "3 Tr " if invisible else ""   # render mode 3 = invisible: the text layer of a "searchable scan"
+        self.ops.append(f"BT {tr}/{'F2' if bold else 'F1'} {size} Tf {x} {y} Td ({_esc(s)}) Tj ET")
+        return self
+
+    def scan(self, pil_image):
+        """Cover the whole page with a greyscale scan (what a scanner/printer-to-PDF produces)."""
+        g = pil_image.convert("L")
+        name = f"Im{len(self.images) + 1}"
+        self.images.append((name, g.width, g.height, g.tobytes(), "gray"))
+        self.ops.append(f"q {PAGE_W} 0 0 {PAGE_H} 0 0 cm /{name} Do Q")
         return self
 
     def _mc(self, tag, ops):
@@ -93,8 +102,14 @@ def build_pdf(pages, title=None, lang=None, tagged=False, display_title=False, r
     kids = []
     for pg in pages:
         img_refs = []
-        for (name, w, h, rgb) in pg.images:
-            ref = add(b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length %d >>\nstream\n" % (w, h, len(rgb)) + rgb + b"\nendstream")
+        for img in pg.images:
+            name, w, h, rgb = img[:4]
+            if len(img) > 4 and img[4] == "gray":
+                import zlib
+                z = zlib.compress(rgb)
+                ref = add(b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length %d >>\nstream\n" % (w, h, len(z)) + z + b"\nendstream")
+            else:
+                ref = add(b"<< /Type /XObject /Subtype /Image /Width %d /Height %d /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length %d >>\nstream\n" % (w, h, len(rgb)) + rgb + b"\nendstream")
             img_refs.append(f"/{name} {ref} 0 R")
         stream = "\n".join(pg.ops)
         content = add(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
