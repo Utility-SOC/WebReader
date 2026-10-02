@@ -214,7 +214,8 @@ function App() {
     const handleKeyDown = (e) => {
       if (showEditor) return;
       const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY') return;
+      if (document.querySelector('[role="dialog"]')) return;
       if (e.code === "Space") {
         e.preventDefault();
         setIsPlaying(prev => !prev);
@@ -322,8 +323,11 @@ function App() {
   return (
     <div className={`min-h-screen transition-colors duration-500 ${themeClasses} selection:bg-indigo-500/30 selection:text-indigo-200 overflow-x-hidden font-sans`}>
 
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[60] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-indigo-600 focus:text-white">Skip to main content</a>
+      <div className="sr-only" role="status" aria-live="polite">{loading ? statusMessage : (words.length > 0 ? `Document ready, ${words.length} words.` : "")}</div>
+
       {/* Background Ambience */}
-      <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
+      <div aria-hidden="true" className="fixed inset-0 z-0 overflow-hidden pointer-events-none">
         <div className={`absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full blur-[120px] opacity-[0.15] mix-blend-screen animate-pulse ${isDark ? 'bg-indigo-600' : 'bg-blue-400'}`}></div>
         <div className={`absolute top-20 right-0 w-[500px] h-[500px] rounded-full blur-[100px] opacity-[0.1] mix-blend-screen ${isDark ? 'bg-purple-600' : 'bg-purple-400'}`}></div>
         <div className={`absolute bottom-0 left-1/3 w-[800px] h-[400px] rounded-full blur-[120px] opacity-[0.1] mix-blend-screen ${isDark ? 'bg-emerald-600' : 'bg-teal-400'}`}></div>
@@ -343,14 +347,14 @@ function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button onClick={() => setIsDark(!isDark)} className={`p-3 rounded-full transition-all duration-300 ${isDark ? 'hover:bg-gray-800 text-yellow-400' : 'bg-white hover:bg-gray-100 text-gray-600 shadow-sm border border-gray-100'}`}>
+            <button onClick={() => setIsDark(!isDark)} aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'} className={`p-3 rounded-full transition-all duration-300 ${isDark ? 'hover:bg-gray-800 text-yellow-400' : 'bg-white hover:bg-gray-100 text-gray-600 shadow-sm border border-gray-100'}`}>
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
           </div>
         </header>
 
         {/* Main Interface */}
-        <main className="w-full flex-1 flex flex-col items-center justify-center gap-8 w-full max-w-5xl">
+        <main id="main" tabIndex={-1} className="w-full flex-1 flex flex-col items-center justify-center gap-8 w-full max-w-5xl">
 
           <div ref={readerCardRef} className={`w-full relative rounded-[2.5rem] overflow-hidden backdrop-blur-xl border transition-all duration-500 ${cardClasses}`}>
 
@@ -358,7 +362,7 @@ function App() {
             <div className="min-h-[500px] flex flex-col items-center justify-center p-8 sm:p-12 relative">
 
               {loading ? (
-                <div className="flex flex-col items-center justify-center gap-8 animate-in fade-in duration-700">
+                <div role="status" className="flex flex-col items-center justify-center gap-8 animate-in fade-in duration-700">
                   <div className="relative">
                     <div className="w-24 h-24 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -366,8 +370,8 @@ function App() {
                     </div>
                   </div>
                   <div className="text-center">
-                    <h3 className="text-xl font-medium text-indigo-400 mb-2">{statusMessage}</h3>
-                    <p className="text-sm opacity-50">Optimizing text extraction...</p>
+                    <h3 className={`text-xl font-medium ${isDark ? 'text-indigo-300' : 'text-indigo-700'} mb-2`}>{statusMessage}</h3>
+                    <p className="text-sm opacity-75">Optimizing text extraction...</p>
                   </div>
                 </div>
               ) : words.length === 0 ? (
@@ -376,20 +380,20 @@ function App() {
                     <h2 className={`text-2xl font-semibold tracking-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
                       No document loaded
                     </h2>
-                    <p className={`text-lg ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                    <p className={`text-lg ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
                       Upload a file to begin reading.
                     </p>
                   </div>
 
                   <div className="pt-4">
                     <label className="group relative inline-flex flex-col items-center gap-4 cursor-pointer">
-                      <div className={`w-full h-32 w-64 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 transition-all duration-300 group-hover:border-indigo-500/50 group-hover:bg-indigo-500/5 ${isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-300 bg-white/50'}`}>
+                      <div className={`w-full h-32 w-64 border-2 border-dashed rounded-2xl peer-focus-visible:ring-4 peer-focus-visible:ring-indigo-500 flex flex-col items-center justify-center gap-3 transition-all duration-300 group-hover:border-indigo-500/50 group-hover:bg-indigo-500/5 ${isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-300 bg-white/50'}`}>
                         <UploadCloud size={32} className={`transition-colors group-hover:text-indigo-500 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
-                        <span className="text-sm font-medium opacity-70 group-hover:opacity-100">Drop file or click to browse</span>
+                        <span className="text-sm font-medium opacity-90">Drop file or click to browse</span>
                       </div>
-                      <input type="file" onChange={handleUpload} accept=".pdf,.epub,.mobi,.azw3,.txt,.docx,.png,.jpg,.jpeg,.webp" className="hidden" />
+                      <input type="file" onChange={handleUpload} aria-label="Choose a document to read" accept=".pdf,.epub,.mobi,.azw3,.txt,.docx,.png,.jpg,.jpeg,.webp" className="sr-only peer" />
                     </label>
-                    <p className="text-xs font-mono opacity-40 mt-6">SUPPORTS PDF, EPUB, MOBI, TXT, DOCX, IMAGES</p>
+                    <p className="text-xs font-mono opacity-70 mt-6">SUPPORTS PDF, EPUB, MOBI, TXT, DOCX, IMAGES</p>
                   </div>
                 </div>
               ) : (
@@ -413,10 +417,11 @@ function App() {
                   </div>
                   <input
                     type="range" min="0" max={words.length} value={index}
+                    aria-label="Reading position" aria-valuetext={`Word ${index} of ${words.length}`}
                     onChange={(e) => setIndex(Number(e.target.value))}
                     className="absolute inset-0 w-full h-4 -top-1 opacity-0 cursor-pointer"
                   />
-                  <div className="flex justify-between mt-3 text-xs font-medium tracking-wider opacity-60 font-mono">
+                  <div className="flex justify-between mt-3 text-xs font-medium tracking-wider opacity-80 font-mono">
                     <span>{Math.floor((index / words.length) * 100)}%</span>
                     <span>{index.toLocaleString()} / {words.length.toLocaleString()}</span>
                   </div>
@@ -427,14 +432,14 @@ function App() {
 
                   {/* Left Actions */}
                   <div className="flex items-center gap-2 justify-start">
-                    <button onClick={resetToUpload} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Load a Different File">
+                    <button onClick={resetToUpload} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-300 hover:text-white' : 'hover:bg-gray-100 text-gray-700'}`} title="Load a Different File" aria-label="Load a different file">
                       <UploadCloud size={20} />
                     </button>
-                    <button onClick={() => setShowChapterSelector(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Chapters">
+                    <button onClick={() => setShowChapterSelector(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-300 hover:text-white' : 'hover:bg-gray-100 text-gray-700'}`} title="Chapters" aria-label="Chapters">
                       <BookOpen size={20} />
                     </button>
                     {images.length > 0 && (
-                      <button onClick={() => setShowGallery(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Gallery">
+                      <button onClick={() => setShowGallery(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-300 hover:text-white' : 'hover:bg-gray-100 text-gray-700'}`} title="Gallery" aria-label={`Image gallery, ${images.length} images`}>
                         <div className="relative">
                           <Image size={20} />
                           <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-500 rounded-full"></span>
@@ -444,10 +449,10 @@ function App() {
 
                     {/* DOWNLOADS */}
                     <div className="flex gap-1 ml-2 pl-2 border-l border-white/10">
-                      <button onClick={downloadTranscript} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Download Transcript">
+                      <button onClick={downloadTranscript} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-300 hover:text-white' : 'hover:bg-gray-100 text-gray-700'}`} title="Download Transcript" aria-label="Download transcript">
                         <FileText size={20} />
                       </button>
-                      <button onClick={() => setShowAudioModal(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Download Audio (TTS)">
+                      <button onClick={() => setShowAudioModal(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-300 hover:text-white' : 'hover:bg-gray-100 text-gray-700'}`} title="Download Audio (TTS)" aria-label="Download audio (text to speech)">
                         <Volume2 size={20} />
                       </button>
                     </div>
@@ -455,12 +460,13 @@ function App() {
 
                   {/* Center Playback */}
                   <div className="flex items-center justify-center gap-6">
-                    <button onClick={() => setIndex(Math.max(0, index - 50))} className={`p-3 rounded-full transition-all active:scale-90 ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}>
+                    <button onClick={() => setIndex(Math.max(0, index - 50))} aria-label="Back 50 words" className={`p-3 rounded-full transition-all active:scale-90 ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}>
                       <ChevronLeft size={24} />
                     </button>
 
                     <button
                       onClick={() => setIsPlaying(!isPlaying)}
+                      aria-label={isPlaying ? "Pause" : "Play"}
                       className="group relative"
                     >
                       <div className={`absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full blur opacity-60 group-hover:opacity-100 transition duration-300`}></div>
@@ -469,14 +475,14 @@ function App() {
                       </div>
                     </button>
 
-                    <button onClick={() => setIndex(Math.min(words.length, index + 50))} className={`p-3 rounded-full transition-all active:scale-90 ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}>
+                    <button onClick={() => setIndex(Math.min(words.length, index + 50))} aria-label="Forward 50 words" className={`p-3 rounded-full transition-all active:scale-90 ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}>
                       <ChevronRight size={24} />
                     </button>
                   </div>
 
                   {/* Right Actions */}
                   <div className="flex items-center gap-2 justify-end">
-                    <button onClick={() => setIndex(0)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500'}`} title="Restart">
+                    <button onClick={() => setIndex(0)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-300 hover:text-white' : 'hover:bg-gray-100 text-gray-700'}`} title="Restart" aria-label="Restart from beginning">
                       <RotateCcw size={20} />
                     </button>
                   </div>
@@ -485,12 +491,12 @@ function App() {
 
                 {/* Speed — the single most important control, so it lives right under Play */}
                 <div className="w-[80%] mx-auto mt-6">
-                  <div className="flex justify-between text-xs font-medium tracking-wider opacity-60 mb-1">
-                    <span>SPEED</span>
-                    <span className="text-indigo-400 font-mono">{settings.wpm} WPM</span>
+                  <div className="flex justify-between text-xs font-medium tracking-wider opacity-80 mb-1">
+                    <span id="lbl-speed-main">SPEED</span>
+                    <span className={`${isDark ? 'text-indigo-300' : 'text-indigo-700'} font-mono`}>{settings.wpm} WPM</span>
                   </div>
                   <input
-                    type="range" min="100" max="900" step="10"
+                    type="range" min="100" max="900" step="10" aria-labelledby="lbl-speed-main" aria-valuetext={`${settings.wpm} words per minute`}
                     value={settings.wpm}
                     onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })}
                     className="w-full h-2 accent-indigo-500 cursor-pointer"
@@ -504,13 +510,14 @@ function App() {
           <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-6">
             <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
               <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
-                Reading Presets <span className="text-xs opacity-40">▾</span>
+                Reading Presets <span aria-hidden="true" className="text-xs opacity-70">▾</span>
               </summary>
               <div className="space-y-2 mt-3">
                 {Object.values(PRESETS).map((preset) => (
                   <button
                     key={preset.id}
                     onClick={() => applyPreset(preset.id)}
+                    aria-pressed={activePresetId === preset.id}
                     className={`w-full text-left p-3 rounded-xl transition-all border ${
                       activePresetId === preset.id
                         ? (isDark ? 'border-indigo-500 bg-indigo-500/10' : 'border-indigo-400 bg-indigo-50')
@@ -518,7 +525,7 @@ function App() {
                     }`}
                   >
                     <div className="font-medium text-sm">{preset.label}</div>
-                    <div className="text-xs opacity-50">{preset.citation}</div>
+                    <div className="text-xs opacity-75">{preset.citation}</div>
                   </button>
                 ))}
               </div>
@@ -526,11 +533,12 @@ function App() {
 
             <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
               <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
-                Appearance <span className="text-xs opacity-40">▾</span>
+                Appearance <span aria-hidden="true" className="text-xs opacity-70">▾</span>
               </summary>
               <div className="mt-3">
-                <label className="block text-xs opacity-70 mb-1">Font</label>
+                <label htmlFor="set-font" className="block text-xs opacity-80 mb-1">Font</label>
                 <select
+                  id="set-font"
                   value={appearance.fontFamily}
                   onChange={(e) => setAppearance({ ...appearance, fontFamily: e.target.value })}
                   className={`w-full p-2 rounded-lg border text-sm mb-4 ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`}
@@ -539,27 +547,27 @@ function App() {
                 </select>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Size</span><span>{appearance.fontSize}px</span></div>
-                    <input type="range" min="24" max="120" value={appearance.fontSize} onChange={(e) => setAppearance({ ...appearance, fontSize: Number(e.target.value) })} className="w-full" />
+                    <div className="flex justify-between text-xs opacity-90 mb-1"><span id="lbl-size">Size</span><span>{appearance.fontSize}px</span></div>
+                    <input aria-labelledby="lbl-size" type="range" min="24" max="120" value={appearance.fontSize} onChange={(e) => setAppearance({ ...appearance, fontSize: Number(e.target.value) })} className="w-full" />
                   </div>
                   <div>
-                    <div className="flex justify-between text-xs opacity-70 mb-1"><span>Width</span><span>{appearance.containerWidth}px</span></div>
-                    <input type="range" min="400" max="1400" step="20" value={appearance.containerWidth} onChange={(e) => setAppearance({ ...appearance, containerWidth: Number(e.target.value) })} className="w-full" />
+                    <div className="flex justify-between text-xs opacity-90 mb-1"><span id="lbl-width">Width</span><span>{appearance.containerWidth}px</span></div>
+                    <input aria-labelledby="lbl-width" type="range" min="400" max="1400" step="20" value={appearance.containerWidth} onChange={(e) => setAppearance({ ...appearance, containerWidth: Number(e.target.value) })} className="w-full" />
                   </div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1">
-                    <span>Text Color</span>
-                    {appearance.textColor && <button onClick={() => setAppearance({ ...appearance, textColor: '' })} className="text-indigo-400 hover:underline">Reset to theme</button>}
+                  <div className="flex justify-between text-xs opacity-90 mb-1">
+                    <span id="lbl-textcolor">Text Color</span>
+                    {appearance.textColor && <button onClick={() => setAppearance({ ...appearance, textColor: '' })} className={`${isDark ? 'text-indigo-300' : 'text-indigo-700'} hover:underline`}>Reset to theme</button>}
                   </div>
                   <div className="flex items-center gap-3">
                     <input
-                      type="color"
+                      type="color" aria-labelledby="lbl-textcolor"
                       value={appearance.textColor || (isDark ? '#f3f4f6' : '#111827')}
                       onChange={(e) => setAppearance({ ...appearance, textColor: e.target.value })}
                       className="h-9 w-14 rounded cursor-pointer bg-transparent border border-gray-500/30"
                     />
-                    <span className="text-xs opacity-50">{appearance.textColor || 'Using theme default'}</span>
+                    <span className="text-xs opacity-75">{appearance.textColor || 'Using theme default'}</span>
                   </div>
                 </div>
               </div>
@@ -567,32 +575,32 @@ function App() {
 
             <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
               <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
-                Mechanics <span className="text-xs opacity-40">▾</span>
+                Mechanics <span aria-hidden="true" className="text-xs opacity-70">▾</span>
               </summary>
               <div className="space-y-4 mt-3">
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>Speed</span><span className="text-indigo-400 font-mono">{settings.wpm} WPM</span></div>
-                  <input type="range" min="100" max="900" step="10" value={settings.wpm} onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })} className="w-full" />
-                  <div className="text-xs opacity-40 mt-1">Or scroll over the reader above to adjust speed.</div>
+                  <div className="flex justify-between text-xs opacity-90 mb-1"><span id="lbl-speed-set">Speed</span><span className={`${isDark ? 'text-indigo-300' : 'text-indigo-700'} font-mono`}>{settings.wpm} WPM</span></div>
+                  <input aria-labelledby="lbl-speed-set" aria-valuetext={`${settings.wpm} words per minute`} type="range" min="100" max="900" step="10" value={settings.wpm} onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })} className="w-full" />
+                  <div className="text-xs opacity-75 mt-1">Or scroll over the reader above to adjust speed.</div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>Chunk Size</span><span className="text-indigo-400 font-mono">{settings.chunkSize} Words</span></div>
-                  <input type="range" min="1" max="6" step="1" value={settings.chunkSize} onChange={(e) => setSettings({ ...settings, chunkSize: Number(e.target.value) })} className="w-full" />
+                  <div className="flex justify-between text-xs opacity-90 mb-1"><span id="lbl-chunk">Chunk Size</span><span className={`${isDark ? 'text-indigo-300' : 'text-indigo-700'} font-mono`}>{settings.chunkSize} Words</span></div>
+                  <input aria-labelledby="lbl-chunk" type="range" min="1" max="6" step="1" value={settings.chunkSize} onChange={(e) => setSettings({ ...settings, chunkSize: Number(e.target.value) })} className="w-full" />
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1"><span>ORP Pivot Position</span><span className="text-indigo-400 font-mono">{Math.round(settings.orpOffset * 100)}%</span></div>
-                  <input type="range" min="0.1" max="0.9" step="0.05" value={settings.orpOffset} onChange={(e) => setSettings({ ...settings, orpOffset: Number(e.target.value) })} className="w-full" />
+                  <div className="flex justify-between text-xs opacity-90 mb-1"><span id="lbl-orp">ORP Pivot Position</span><span className={`${isDark ? 'text-indigo-300' : 'text-indigo-700'} font-mono`}>{Math.round(settings.orpOffset * 100)}%</span></div>
+                  <input aria-labelledby="lbl-orp" type="range" min="0.1" max="0.9" step="0.05" value={settings.orpOffset} onChange={(e) => setSettings({ ...settings, orpOffset: Number(e.target.value) })} className="w-full" />
                 </div>
                 <div>
-                  <div className="text-xs opacity-70 mb-1">ORP Highlight Color</div>
+                  <div id="lbl-orpcolor" className="text-xs opacity-80 mb-1">ORP Highlight Color</div>
                   <div className="flex items-center gap-3">
                     <input
-                      type="color"
+                      type="color" aria-labelledby="lbl-orpcolor"
                       value={appearance.orpColor}
                       onChange={(e) => setAppearance({ ...appearance, orpColor: e.target.value })}
                       className="h-9 w-14 rounded cursor-pointer bg-transparent border border-gray-500/30"
                     />
-                    <span className="text-xs opacity-50">Red is the common convention (strongest contrast against body text); pick whatever reads best for you.</span>
+                    <span className="text-xs opacity-75">Red is the common convention (strongest contrast against body text); pick whatever reads best for you.</span>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
@@ -611,22 +619,22 @@ function App() {
 
             <details open className={`rounded-2xl border p-5 ${cardClasses}`}>
               <summary className="font-semibold mb-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden flex items-center justify-between">
-                Punctuation <span className="text-xs opacity-40">▾</span>
+                Punctuation <span aria-hidden="true" className="text-xs opacity-70">▾</span>
               </summary>
               <div className="mt-3">
-                <div className="text-xs opacity-70 mb-2">Delay multipliers for pacing.</div>
+                <div className="text-xs opacity-80 mb-2">Delay multipliers for pacing.</div>
                 <div className="space-y-1 mb-4 max-h-48 overflow-y-auto">
                   {punctuationRules.map((rule, i) => (
                     <div key={i} className={`flex justify-between items-center text-sm p-2 rounded-lg ${isDark ? 'bg-black/20' : 'bg-gray-50'}`}>
                       <span className="font-mono opacity-80">"{rule.str === "\n\n" ? "¶" : rule.str}"</span>
-                      <span className="font-bold text-indigo-400">{rule.val}x</span>
-                      <button onClick={() => removePunctuationRule(i)} className="text-red-500 hover:text-red-400 font-bold px-2">×</button>
+                      <span className={`font-bold ${isDark ? 'text-indigo-300' : 'text-indigo-700'}`}>{rule.val}x</span>
+                      <button onClick={() => removePunctuationRule(i)} aria-label={`Remove delay rule for ${rule.str === "\n\n" ? "paragraph break" : rule.str}`} className={`font-bold px-2 ${isDark ? "text-red-400 hover:text-red-300" : "text-red-700 hover:text-red-600"}`}><span aria-hidden="true">×</span></button>
                     </div>
                   ))}
                 </div>
                 <div className="flex gap-2">
-                  <input placeholder="String" value={newRuleStr} onChange={e => setNewRuleStr(e.target.value)} className={`w-20 p-2 text-sm rounded-lg border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`} />
-                  <input type="number" step="0.1" value={newRuleVal} onChange={e => setNewRuleVal(e.target.value)} className={`w-16 p-2 text-sm rounded-lg border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`} />
+                  <input aria-label="Punctuation string" placeholder="String" value={newRuleStr} onChange={e => setNewRuleStr(e.target.value)} className={`w-20 p-2 text-sm rounded-lg border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`} />
+                  <input aria-label="Delay multiplier" type="number" step="0.1" value={newRuleVal} onChange={e => setNewRuleVal(e.target.value)} className={`w-16 p-2 text-sm rounded-lg border ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200'}`} />
                   <button onClick={addPunctuationRule} className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-bold">ADD</button>
                 </div>
               </div>

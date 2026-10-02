@@ -21,6 +21,7 @@ from .utils import (
     load_epub_manual, 
     load_mobi_manual,
     extract_text_with_ocr, 
+    box_text_preview,
     TESSERACT_CMD
 )
 from .tasks import process_document_background
@@ -191,6 +192,24 @@ def get_pdf_page_image(filename: str, page_num: int):
             
     except Exception as e:
         logger.error(f"Render failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/pdf/{filename}/box_text")
+def get_box_text(filename: str, page: int = Body(...), box: Dict[str, Any] = Body(...)):
+    """
+    First/last words inside one manual box, so the editor can read them out
+    (lets keyboard / screen-reader users verify box placement without seeing it).
+    `page` is the 0-based page index; `box` uses the same shape as manual_boxes entries.
+    """
+    path = os.path.join(TEMP_DIR, filename)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        return box_text_preview(path, page, box)
+    except IndexError:
+        raise HTTPException(status_code=400, detail="Invalid page number")
+    except Exception as e:
+        logger.error(f"Box preview failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process_pdf")

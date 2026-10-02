@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Image, X, Download, Maximize2 } from 'lucide-react';
+import Modal from './Modal';
 
 const ImageGallery = ({ images, isDark, onClose }) => {
     // If used as a modal (passed via props in App.jsx usually), we control it there.
@@ -10,8 +11,8 @@ const ImageGallery = ({ images, isDark, onClose }) => {
     if (!images || images.length === 0) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
+        <Modal labelId="gallery-title" onClose={onClose} className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+            <div aria-hidden="true" className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose}></div>
 
             <div className={`relative w-full max-w-5xl h-[80vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden transform transition-all scale-100 ${isDark ? 'bg-gray-900/90 border border-gray-700 text-white' : 'bg-white/90 border border-gray-200 text-gray-900'
                 }`}>
@@ -23,12 +24,13 @@ const ImageGallery = ({ images, isDark, onClose }) => {
                             <Image size={24} />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold tracking-tight">Extracted Images</h2>
-                            <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{images.length} images found</p>
+                            <h2 id="gallery-title" className="text-xl font-bold tracking-tight">Extracted Images</h2>
+                            <p className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>{images.length} images found</p>
                         </div>
                     </div>
                     <button
                         onClick={onClose}
+                        aria-label="Close image gallery"
                         className={`p-2 rounded-full transition-colors ${isDark ? 'hover:bg-gray-800 text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-900'}`}
                     >
                         <X size={24} />
@@ -44,14 +46,15 @@ const ImageGallery = ({ images, isDark, onClose }) => {
                                 <div className="aspect-video w-full overflow-hidden bg-gray-100/5 relative">
                                     <img
                                         src={img.src}
-                                        alt={img.name}
+                                        alt={img.caption || img.name}
                                         className="w-full h-full object-contain transition-transform duration-500 group-hover:scale-105"
                                     />
                                     {/* Overlay */}
-                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity flex items-center justify-center gap-2">
                                         <a
                                             href={img.src}
                                             download={img.name + ".png"}
+                                            aria-label={`Download ${img.name}`}
                                             className="p-2 bg-white/10 hover:bg-white/20 hover:scale-110 rounded-full backdrop-blur-md text-white transition-all transform"
                                             title="Download"
                                         >
@@ -60,6 +63,7 @@ const ImageGallery = ({ images, isDark, onClose }) => {
                                         <button
                                             className="p-2 bg-white/10 hover:bg-white/20 hover:scale-110 rounded-full backdrop-blur-md text-white transition-all transform"
                                             title="View Full"
+                                            aria-label={`View ${img.name} full size`}
                                             onClick={() => window.open(img.src, '_blank')}
                                         >
                                             <Maximize2 size={20} />
@@ -74,7 +78,7 @@ const ImageGallery = ({ images, isDark, onClose }) => {
                     </div>
                 </div>
             </div>
-        </div>
+        </Modal>
     );
 };
 
