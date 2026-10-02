@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 import pdfplumber
 from pdfminer.pdftypes import resolve1
 
+from . import ocr_pdf
 from .pdf_auto import _paragraph_text, _split_paragraphs, build_repeated_lines, reading_order_groups
 from .structure import Block, DocumentStructure, FIGURE, HEADING, LIST_ITEM, PARAGRAPH, TABLE
 
@@ -55,8 +56,9 @@ def _bbox_rows(table) -> List[List[str]]:
 
 def extract_pdf_structure(path: str, max_pages: Optional[int] = None) -> DocumentStructure:
     max_pages = max_pages or MAX_PAGES
-    sizes: Counter = Counter()
+    sizes: Dict[str, Counter] = {"text": Counter(), "ocr": Counter()}  # OCR box heights aren't font sizes
     pages: List[List[Dict[str, Any]]] = []
+    ocr_confidence: Dict[int, float] = {}
 
     with pdfplumber.open(path) as pdf:
         cat = pdf.doc.catalog or {}
@@ -69,21 +71,34 @@ def extract_pdf_structure(path: str, max_pages: Optional[int] = None) -> Documen
         total = len(pdf.pages)
         image_only: List[int] = []
         repeated = build_repeated_lines(pdf)
+        key = ocr_pdf.file_key(path)
+        try:
+            plan = ocr_pdf.plan_ocr(pdf, key, max_pages=max_pages)
+        except Exception:
+            plan = ocr_pdf.OcrPlan()
 
         for n, page in enumerate(pdf.pages[:max_pages], 1):
             items: List[Dict[str, Any]] = []
+            src, source = page, "text"
+            if (n - 1) in plan.ocr_pages:
+                try:
+                    src, source = ocr_pdf.ocr_page(page, key), "ocr"
+                    ocr_confidence[n] = round(src.mean_conf, 1)
+                except Exception:
+                    src, source = page, "text"
             try:
-                tables = page.find_tables()
+                tables = page.find_tables() if source == "text" else []   # ruled-table detection needs a real text layer
             except Exception:
                 tables = []
             boxes = [t.bbox for t in tables]  # (x0, top, x1, bottom)
 
-            for group in reading_order_groups(page, repeated, exclude_bboxes=boxes, extra_attrs=("fontname", "size")):
+            for group in reading_order_groups(src, repeated if source == "text" else set(), exclude_bboxes=boxes,
+                                              extra_attrs=("fontname", "size")):
                 for para in _split_paragraphs(group):
                     size, bold, chars = _para_stats(para)
-                    sizes[round(size * 2) / 2] += chars
+                    sizes[source][round(size * 2) / 2] += chars
                     items.append({"k": "para", "lines": para, "size": size, "bold": bold, "top": para[0]["top"],
-                                  "x0": para[0]["x0"], "page": n})
+                                  "x0": para[0]["x0"], "page": n, "src": source})
 
             extras: List[Dict[str, Any]] = []
             for t in tables:
@@ -108,7 +123,16 @@ def extract_pdf_structure(path: str, max_pages: Optional[int] = None) -> Documen
                 items.insert(pos, ex)
             pages.append(items)
 
-    body = sizes.most_common(1)[0][0] if sizes else 0.0
+    body_by_src = {k: (c.most_common(1)[0][0] if c else 0.0) for k, c in sizes.items()}
+    body = body_by_src["text"] or body_by_src["ocr"]
+
+    def body_of(it) -> float:
+        return body_by_src.get(it.get("src", "text")) or body
+
+    def ratio(it) -> float:  # size relative to this page's own body text, so OCR and text pages are comparable
+        b = body_of(it)
+        return round((it["size"] / b) * 20) / 20 if b else 0.0
+
     # Rank distinct heading sizes (largest = level 1)
     def looks_like_heading(it) -> bool:
         lines = it["lines"]
@@ -118,25 +142,30 @@ def extract_pdf_structure(path: str, max_pages: Optional[int] = None) -> Documen
             return False
         if _BULLET.match(text):
             return False
-        big = body and it["size"] >= body * HEADING_SIZE_RATIO
+        big = body_of(it) and it["size"] >= body_of(it) * HEADING_SIZE_RATIO
         bold_short = it["bold"] >= 0.6 and words <= 14
         caps = text.isupper() and words <= 10 and len(text) > 3 and it["bold"] >= 0.6
         return bool(big or bold_short or caps)
 
-    heading_sizes = sorted({round(it["size"] * 2) / 2 for p in pages for it in p
-                            if it["k"] == "para" and looks_like_heading(it) and body and it["size"] >= body * HEADING_SIZE_RATIO},
+    heading_sizes = sorted({ratio(it) for p in pages for it in p
+                            if it["k"] == "para" and looks_like_heading(it) and body_of(it) and it["size"] >= body_of(it) * HEADING_SIZE_RATIO},
                            reverse=True)
     max_level = min(len(heading_sizes), 5)
 
     def level_of(it) -> int:
-        r = round(it["size"] * 2) / 2
+        r = ratio(it)
         if r in heading_sizes:
             return min(heading_sizes.index(r) + 1, 6)
         return min(max_level + 1, 6)  # bold/caps at body size: below the sized headings
 
     s = DocumentStructure(format="pdf", title=title, language=lang, metadata={
         "tagged": tagged, "pages": total, "analysed_pages": min(total, max_pages), "truncated": total > max_pages,
-        "image_only_pages": image_only, "body_font_size": body})
+        "image_only_pages": image_only, "body_font_size": body,
+        # OCR fallback bookkeeping (1-based page numbers)
+        "ocr_pages": sorted(i + 1 for i in plan.ocr_pages), "ocr_reasons": {str(i + 1): r for i, r in plan.reasons.items()},
+        "unreliable_layer": plan.unreliable_layer, "text_agreement": [round(a, 2) for a in plan.agreement],
+        "ocr_confidence": {str(k): v for k, v in ocr_confidence.items()},
+        "ocr_low_confidence_pages": sorted(k for k, v in ocr_confidence.items() if v < ocr_pdf.LOW_CONFIDENCE)})
 
     for items in pages:
         for it in items:
