@@ -185,6 +185,10 @@ things manually or debugging):
 | `WEBREADER_UPLOAD_ANALYSIS` | unset | Set to `1` to run the (slower) accessibility analysis on PDFs you upload to read; the library always runs it |
 | `ML_MEM_LIMIT` | `4g` | Docker Compose only — memory cap for the backend/worker containers; auto-written to `.env` by `scripts/detect-ml-mem-limit.sh` |
 
+## Development
+
+Architecture, how to run and test it, the library and report tooling, and the project's conventions are in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
+
 ## Basic Tutorial
 
 WebReader is designed to be intuitive and fast. Here is how to use the core features:
