@@ -89,8 +89,10 @@ def test_pdf_accessibility_issues_untagged(tmp_path):
     assert acc["structure"]["format"] == "pdf"
 
 
-def test_pdf_tagged_is_not_falsely_flagged(tmp_path):
+def test_pdf_claiming_to_be_tagged_but_with_untagged_content_is_flagged(tmp_path):
+    # An empty tag tree plus a lot of untagged text: "tagged" in name only.
     pg = Page().lines(72, 80, 10, BODY).image(72, 150, 120, 80)
     acc = process_pdf_accessibility(_write(tmp_path, build_pdf([pg], title="T", lang="en", tagged=True)))
     codes = {i["code"] for i in acc["issues"]}
-    assert "PDF_UNTAGGED" not in codes and "FIG_ALT_MISSING" not in codes and "PDF_TAG_TREE_NOT_INSPECTED" in codes
+    assert "PDF_UNTAGGED" not in codes and "PDF_UNTAGGED_CONTENT" in codes
+    assert "FIG_ALT_MISSING" not in codes  # no Figure tags exist to check; layout guesses are not used for tagged PDFs

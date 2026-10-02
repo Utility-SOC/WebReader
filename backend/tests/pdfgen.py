@@ -7,15 +7,53 @@ def _esc(s):
     return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
+class El:
+    """A structure element (tag) in a tagged PDF. `mcid` links it to marked content on a page."""
+    def __init__(self, tag, alt=None, mcid=None, children=None):
+        self.tag, self.alt, self.mcid, self.children = tag, alt, mcid, list(children or [])
+
+
 class Page:
     def __init__(self):
         self.ops = []
         self.images = []  # (name, w, h, rgb_bytes)
+        self.elements = []   # top-level El objects for this page
+        self._mcid = 0
 
     def text(self, x, top, size, s, bold=False):
         y = PAGE_H - top - size
         self.ops.append(f"BT /{'F2' if bold else 'F1'} {size} Tf {x} {y} Td ({_esc(s)}) Tj ET")
         return self
+
+    def _mc(self, tag, ops):
+        """Wrap drawing ops in marked content with the next MCID; returns the MCID."""
+        mcid = self._mcid; self._mcid += 1
+        self.ops.append(f"/{tag} << /MCID {mcid} >> BDC")
+        self.ops.extend(ops)
+        self.ops.append("EMC")
+        return mcid
+
+    def tagged_text(self, x, top, size, s, tag="P", bold=False, parent=None):
+        """Draw text as marked content and create its structure element (added to `parent` or the page)."""
+        y = PAGE_H - top - size
+        mcid = self._mc(tag, [f"BT /{'F2' if bold else 'F1'} {size} Tf {x} {y} Td ({_esc(s)}) Tj ET"])
+        el = El(tag, mcid=mcid)
+        (parent.children if parent else self.elements).append(el)
+        return el
+
+    def tagged_image(self, x, top, w, h, alt=None, parent=None):
+        name = f"Im{len(self.images) + 1}"
+        self.images.append((name, 2, 2, bytes([30, 30, 200] * 4)))
+        mcid = self._mc("Figure", [f"q {w} 0 0 {h} {x} {PAGE_H - top - h} cm /{name} Do Q"])
+        el = El("Figure", alt=alt, mcid=mcid)
+        (parent.children if parent else self.elements).append(el)
+        return el
+
+    def artifact_text(self, x, top, size, s):
+        y = PAGE_H - top - size
+        self.ops.append("/Artifact BMC")
+        self.ops.append(f"BT /F1 {size} Tf {x} {y} Td ({_esc(s)}) Tj ET")
+        self.ops.append("EMC")
 
     def lines(self, x, top, size, strings, leading=None, bold=False):
         leading = leading or size * 1.3
@@ -41,7 +79,7 @@ class Page:
         return self
 
 
-def build_pdf(pages, title=None, lang=None, tagged=False):
+def build_pdf(pages, title=None, lang=None, tagged=False, display_title=False, role_map=None):
     objs = []  # list of bytes bodies, 1-indexed by position + 1
 
     def add(body):
@@ -61,14 +99,41 @@ def build_pdf(pages, title=None, lang=None, tagged=False):
         stream = "\n".join(pg.ops)
         content = add(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
         xobj = f"/XObject << {' '.join(img_refs)} >>" if img_refs else ""
+        sp = f" /StructParents {len(kids)}" if pg.elements else ""
         page = add(f"<< /Type /Page /Parent {pgs} 0 R /MediaBox [0 0 {PAGE_W} {PAGE_H}] /Contents {content} 0 R "
-                   f"/Resources << /Font << /F1 {f1} 0 R /F2 {f2} 0 R >> {xobj} >> >>")
+                   f"/Resources << /Font << /F1 {f1} 0 R /F2 {f2} 0 R >> {xobj} >>{sp} >>")
         kids.append(page)
     extra = ""
     if lang:
         extra += f" /Lang ({lang})"
-    if tagged:
-        struct = add("<< /Type /StructTreeRoot >>")
+    if display_title:
+        extra += " /ViewerPreferences << /DisplayDocTitle true >>"
+    if tagged or any(pg.elements for pg in pages):
+        struct = add("")  # placeholder: filled once the elements exist
+        top_refs, nums = [], []
+
+        def emit(el, parent_ref, page_ref, owners):
+            ref = add("")
+            kid_refs = [emit(c, ref, page_ref, owners) for c in el.children]
+            k = [f"{r} 0 R" for r in kid_refs] + ([str(el.mcid)] if el.mcid is not None else [])
+            alt = f" /Alt ({_esc(el.alt)})" if el.alt is not None else ""
+            objs[ref - 1] = (f"<< /Type /StructElem /S /{el.tag} /P {parent_ref} 0 R /Pg {page_ref} 0 R "
+                             f"/K [{' '.join(k)}]{alt} >>").encode("latin-1")
+            if el.mcid is not None:
+                owners[el.mcid] = ref
+            return ref
+
+        for i, pg in enumerate(pages):
+            if not pg.elements:
+                continue
+            owners = {}
+            for el in pg.elements:
+                top_refs.append(emit(el, struct, kids[i], owners))
+            arr = " ".join(f"{owners[m]} 0 R" for m in sorted(owners))
+            nums.append(f"{i} [{arr}]")
+        rm = f" /RoleMap << {' '.join(f'/{k} /{v}' for k, v in role_map.items())} >>" if role_map else ""
+        objs[struct - 1] = (f"<< /Type /StructTreeRoot /K [{' '.join(f'{r} 0 R' for r in top_refs)}] "
+                            f"/ParentTree << /Nums [{' '.join(nums)}] >>{rm} >>").encode("latin-1")
         extra += f" /MarkInfo << /Marked true >> /StructTreeRoot {struct} 0 R"
     objs[cat - 1] = f"<< /Type /Catalog /Pages {pgs} 0 R{extra} >>".encode("latin-1")
     objs[pgs - 1] = f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] /Count {len(kids)} >>".encode("latin-1")

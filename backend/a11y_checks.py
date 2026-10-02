@@ -51,10 +51,7 @@ def analyze(s: DocumentStructure) -> List[Issue]:
     if s.format == "pdf":
         # Document-level PDF facts (title, language, tagged, scanned) come from analyze_pdf.
         if s.metadata.get("tagged"):
-            issues.append(Issue("PDF_TAG_TREE_NOT_INSPECTED", INFO,
-                                "This PDF is tagged. Its tags, including figure alt text, are not inspected yet, "
-                                "so its figures and tables were not checked.", fix="manual"))
-            return issues
+            return issues  # the real tag tree is checked by pdf_tags.inspect_tags; layout guesses would only add noise
     else:
         if not s.title:
             issues.append(Issue("DOC_TITLE_MISSING", ERROR, "The document has no title in its properties.",
