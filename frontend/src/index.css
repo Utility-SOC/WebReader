@@ -55,3 +55,11 @@ h6 {
     scroll-behavior: auto !important;
   }
 }
+
+
+/* PDF editor boxes in high-contrast / forced-colors modes: the browser replaces our colours with system colours,
+   so show a clear system-colour outline and no tint (nothing can then end up covering the page text). */
+@media (forced-colors: active) {
+  .wr-box-fill { display: none; }
+  .wr-box { outline: 2px solid Highlight; outline-offset: 1px; }
+}
