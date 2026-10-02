@@ -219,6 +219,8 @@ def lib(db, repo):
 def test_search_ranks_filters_and_highlights(lib):
     r = search.search(lib, "water rights")
     assert r["total"] == 1 and r["results"][0]["title"] == "Water Rights Hearing Minutes"
+    assert r["results"][0]["title_source"] == "original"
+    assert search.search(lib, "snow")["results"][0]["title_source"] == "machine"   # inferred from the file name: must be labelled
     assert search.MARK_OPEN in r["results"][0]["snippet"]
     assert search.search(lib, "hear")["total"] == 1                       # prefix on the last word
     assert search.search(lib, "water snow")["total"] == 0                 # every word must match

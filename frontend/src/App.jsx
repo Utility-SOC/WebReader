@@ -6,6 +6,7 @@ import PdfManualEditor from './components/PdfManualEditor';
 import ImageGallery from './components/ImageGallery';
 import ChapterSelector from './components/ChapterSelector';
 import AudioModal from './components/AudioModal';
+import Library, { DocumentAbout } from './components/Library';
 import { Play, Pause, RotateCcw, Image, BookOpen, Volume2, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
 import { PRESETS, FONTS } from './constants';
 
@@ -71,9 +72,43 @@ function App() {
 
   // Reading-room deployments have no uploads (the server answers 404 to them)
   const [readingRoom, setReadingRoom] = useState(false);
+
+  // Library: browse/search the documents an administrator has published
+  const [libraryAvailable, setLibraryAvailable] = useState(false);
+  const [libraryItem, setLibraryItem] = useState(null);   // details of the library document open in the reader
+  const [view, setView] = useState(window.location.hash === '#/library' ? 'library' : 'reader');
   useEffect(() => {
-    fetch('/health').then(r => r.json()).then(d => setReadingRoom(d.mode === 'reading_room')).catch(() => {});
+    Promise.all([fetch('/health').then(r => r.json()), fetch('/library/facets').then(r => r.json()).catch(() => ({}))])
+      .then(([health, facets]) => {
+        const room = health.mode === 'reading_room';
+        const hasDocs = (facets.type || []).some(t => t.count > 0);
+        setReadingRoom(room);
+        setLibraryAvailable(hasDocs);
+        if (room && !window.location.hash) setView('library');   // a reading room opens on its library
+      })
+      .catch(() => {});
   }, []);
+  useEffect(() => {
+    const onHash = () => setView(window.location.hash === '#/library' ? 'library' : 'reader');
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  const goLibrary = () => { window.location.hash = '#/library'; setView('library'); };
+  const goReader = () => { window.location.hash = ''; setView('reader'); };
+  const openLibraryItem = async (item) => {
+    setLoading(true); setStatusMessage('Opening document…');
+    goReader();
+    try {
+      const res = await fetch(`/library/items/${item.id}/text`);
+      if (!res.ok) throw new Error('That document could not be opened.');
+      const data = await res.json();
+      const meta = await fetch(`/library/items/${item.id}`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+      setWords(data.words || []); setImages([]); setChapters([]); setIndex(0); setIsPlaying(false);
+      setCurrentFile(data.title);
+      setLibraryItem(meta || { id: item.id, title: data.title, metadata: [] });
+    } catch (err) { alert(err.message); }
+    finally { setLoading(false); setStatusMessage(''); }
+  };
 
   // Persist reading/appearance preferences across reloads
   useEffect(() => {
@@ -122,6 +157,7 @@ function App() {
     setCurrentFile(null);
     setTempFile(null);
     setManualBoxes(null);
+    setLibraryItem(null);
   };
 
   const handleUpload = async (e) => {
@@ -353,6 +389,20 @@ function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            {(libraryAvailable || readingRoom) && (
+              <nav aria-label="Main" className="flex items-center gap-1 mr-2">
+                <button type="button" onClick={goLibrary} aria-current={view === 'library' ? 'page' : undefined}
+                        className={`px-4 py-2 rounded-xl font-medium ${view === 'library' ? (isDark ? 'bg-white/10' : 'bg-gray-200') : (isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100')}`}>
+                  {readingRoom ? 'Reading room' : 'Library'}
+                </button>
+                {(words.length > 0 || !readingRoom) && (
+                  <button type="button" onClick={goReader} aria-current={view === 'reader' ? 'page' : undefined}
+                          className={`px-4 py-2 rounded-xl font-medium ${view === 'reader' ? (isDark ? 'bg-white/10' : 'bg-gray-200') : (isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100')}`}>
+                    Reader
+                  </button>
+                )}
+              </nav>
+            )}
             <button onClick={() => setIsDark(!isDark)} aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'} className={`p-3 rounded-full transition-all duration-300 ${isDark ? 'hover:bg-gray-800 text-yellow-400' : 'bg-white hover:bg-gray-100 text-gray-600 shadow-sm border border-gray-100'}`}>
               {isDark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -361,6 +411,10 @@ function App() {
 
         {/* Main Interface */}
         <main id="main" tabIndex={-1} className="w-full flex-1 flex flex-col items-center justify-center gap-8 w-full max-w-5xl">
+          {view === 'library' && (libraryAvailable || readingRoom) ? (
+            <Library isDark={isDark} cardClasses={cardClasses} onOpen={openLibraryItem} readingRoom={readingRoom} />
+          ) : (<>
+          {libraryItem && <DocumentAbout item={libraryItem} isDark={isDark} onBack={goLibrary} />}
 
           <div ref={readerCardRef} className={`w-full relative rounded-[2.5rem] overflow-hidden backdrop-blur-xl border transition-all duration-500 ${cardClasses}`}>
 
@@ -646,6 +700,7 @@ function App() {
               </div>
             </details>
           </div>
+          </>)}
         </main>
       </div>
 

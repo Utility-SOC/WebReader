@@ -115,13 +115,16 @@ def describe(db: Session, id_snips) -> List[Dict[str, Any]]:
         return []
     items = {it.id: it for it in db.query(Item).filter(Item.id.in_(ids)).all()}
     meta: Dict[int, Dict[str, List[str]]] = {}
+    title_source: Dict[int, str] = {}
     for r in db.query(ItemMeta).filter(ItemMeta.item_id.in_(ids), ItemMeta.superseded.is_(False)).all():
         meta.setdefault(r.item_id, {}).setdefault(r.key, []).append(r.value)
+        if r.key == "title":
+            title_source[r.item_id] = r.provenance
     out = []
     for i, snip in id_snips:
         it, m = items[i], meta.get(i, {})
         out.append({
-            "id": i, "title": it.title or it.filename, "file_type": it.file_type,
+            "id": i, "title": it.title or it.filename, "title_source": title_source.get(i), "file_type": it.file_type,
             "agency": (m.get("agency") or [None])[0], "tags": m.get("tag", []), "folder": (m.get("folder") or [None])[0],
             "date": it.doc_date.isoformat() if it.doc_date else None, "snippet": snip,
         })
