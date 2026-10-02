@@ -102,3 +102,20 @@ def process_document_core(task_id: str, document_id: int, manual_boxes: dict = N
         db.commit()
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Library (repository sync) -- thin wrappers so a worker can run a sync in the background
+# ---------------------------------------------------------------------------
+@celery_app.task(name="library.sync_source")
+def sync_source_task(source_id: int, dry_run: bool = False):
+    from .library_models import Source
+    from .ingest import sync_source
+    db = SessionLocal()
+    try:
+        source = db.query(Source).filter(Source.id == source_id).first()
+        if not source:
+            raise ValueError(f"No library source with id {source_id}")
+        return sync_source(db, source, dry_run=dry_run).summary()
+    finally:
+        db.close()
