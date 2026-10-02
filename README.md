@@ -131,6 +131,15 @@ python -m backend.library_cli withdraw county --path public/notes.txt
 - **Public API** (what a reading-room visitor can reach, with `WEBREADER_MODE=reading_room`): `GET /library/search`, `/library/facets`, `/library/items/{id}`, `/library/items/{id}/text`. It returns only released items and never exposes repository paths. Search terms are not logged or stored.
 - Repositories are read through connectors (a plain folder today); S3, SFTP and SharePoint plug into the same interface.
 
+### Try it with sample documents
+
+```bash
+docker compose up -d
+./scripts/demo-seed.sh        # builds ./demo-repo (incl. a scanned PDF and files with typical accessibility problems) and loads it
+```
+
+Then open http://localhost:5173/#/library. Run `./scripts/ui-check.sh` for a browser check of the library UI (axe in light and dark, keyboard-only search, paging and focus, labelling of software-inferred titles, privacy, 320px reflow).
+
 ## AI providers (image captioning)
 
 Captioning describes photos and figures so they are read aloud and shown as image alt text. Choose where it runs:
