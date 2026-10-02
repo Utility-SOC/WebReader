@@ -48,12 +48,20 @@ class Issue:
 def analyze(s: DocumentStructure) -> List[Issue]:
     issues: List[Issue] = []
 
-    if not s.title:
-        issues.append(Issue("DOC_TITLE_MISSING", ERROR, "The document has no title in its properties.",
-                            wcag="2.4.2", fix="auto"))
-    if not s.language:
-        issues.append(Issue("DOC_LANGUAGE_MISSING", ERROR, "The document's language is not set.",
-                            wcag="3.1.1", fix="suggest"))
+    if s.format == "pdf":
+        # Document-level PDF facts (title, language, tagged, scanned) come from analyze_pdf.
+        if s.metadata.get("tagged"):
+            issues.append(Issue("PDF_TAG_TREE_NOT_INSPECTED", INFO,
+                                "This PDF is tagged. Its tags, including figure alt text, are not inspected yet, "
+                                "so its figures and tables were not checked.", fix="manual"))
+            return issues
+    else:
+        if not s.title:
+            issues.append(Issue("DOC_TITLE_MISSING", ERROR, "The document has no title in its properties.",
+                                wcag="2.4.2", fix="auto"))
+        if not s.language:
+            issues.append(Issue("DOC_LANGUAGE_MISSING", ERROR, "The document's language is not set.",
+                                wcag="3.1.1", fix="suggest"))
 
     _check_figures(s, issues)
     _check_tables(s, issues)
