@@ -55,11 +55,13 @@ await page.waitForFunction(() => document.querySelector('#library-title').parent
 
 // ---- paging + focus
 await page.locator('button:has-text("Next page")').click();
-await page.waitForFunction(() => document.querySelector('nav[aria-label="Results pages"]')?.textContent.includes('Page 2 of 2'));
-ok('page 2 has the remaining 16', await results().count() === 16);
+// The page label updates at once while the previous page's results stay up until the new ones arrive, so wait for the results themselves.
+await page.waitForFunction(() => document.querySelectorAll('ol[aria-label="Search results"] > li').length === 16, null, { timeout: 15000 }).catch(() => {});
+ok('page 2 has the remaining 16', await results().count() === 16, `${await results().count()}`);
+await page.waitForFunction(() => document.activeElement?.textContent === 'Results', null, { timeout: 5000 }).catch(() => {});
 ok('focus moves to the results heading after paging', await page.evaluate(() => document.activeElement?.textContent === 'Results'));
 await page.locator('button:has-text("Previous page")').click();
-await page.waitForFunction(() => document.querySelector('nav[aria-label="Results pages"]')?.textContent.includes('Page 1 of 2'));
+await page.waitForFunction(() => document.querySelectorAll('ol[aria-label="Search results"] > li').length === 20, null, { timeout: 15000 });
 
 // ---- machine-generated labelling
 await page.locator('#lib-q').fill('snow'); await page.keyboard.press('Enter');
