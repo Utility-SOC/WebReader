@@ -2,6 +2,23 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, ArrowRight, Trash2, Check, X, Image as ImageIcon, Type, Plus, Volume2 } from 'lucide-react';
 import Modal from './Modal';
 
+// Plain hex / rgba() colours on purpose: they work in every browser, including ones that don't understand the newer
+// colour functions the stylesheet uses, and in high-contrast modes.
+const BOX_COLORS = {
+    text:  { border: '#2563eb', selected: '#1d4ed8', fill: 'rgba(37, 99, 235, 0.10)', label: '#1d4ed8' },
+    image: { border: '#f97316', selected: '#c2410c', fill: 'rgba(249, 115, 22, 0.20)', label: '#c2410c' },
+};
+const FILL_KEY = 'webreader:box-fill';
+
+// The tint is drawn on its own layer with multiply blending: even if some browser, extension or display setting
+// turned it fully opaque, dark text underneath still shows through (multiplying by a light colour keeps it dark).
+// It must sit in the SAME stacking context as the page image (a sibling of it): inside a z-indexed box it would be
+// isolated, and a blend can't reach the image behind an isolated layer.
+const BoxFill = ({ rect, color }) => (
+    <div className="wr-box-fill absolute pointer-events-none"
+         style={{ ...rect, backgroundColor: color, mixBlendMode: 'multiply' }} />
+);
+
 const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish }) => {
     const [pageIdx, setPageIdx] = useState(0);
     const [tool, setTool] = useState('text'); // 'text' | 'image'
@@ -13,6 +30,14 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
     // New State
     const [startPage, setStartPage] = useState(1);
     const [fitWidth, setFitWidth] = useState(true);
+    // 'tint' (a light fill) or 'outline' (border only) -- an escape hatch for displays that render the fill badly
+    const [boxFill, setBoxFill] = useState(() => { try { return localStorage.getItem(FILL_KEY) === 'outline' ? 'outline' : 'tint'; } catch { return 'tint'; } });
+    const toggleBoxFill = () => setBoxFill(prev => {
+        const next = prev === 'tint' ? 'outline' : 'tint';
+        try { localStorage.setItem(FILL_KEY, next); } catch { /* storage unavailable: the choice just won't persist */ }
+        setAnnouncement(next === 'outline' ? 'Boxes now show an outline only.' : 'Boxes now show a light tint.');
+        return next;
+    });
 
     // Interaction State
     const [interaction, setInteraction] = useState({
@@ -363,6 +388,12 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
                         <Plus size={16} /> Add box <span className="hidden md:inline opacity-80">(N)</span>
                     </button>
                     <button onClick={() => setFitWidth(!fitWidth)} aria-label="Page zoom" aria-pressed={fitWidth} title="Toggle fit-to-width / actual size" className={`p-2 rounded bg-gray-700 text-xs font-bold w-12`}>{fitWidth ? 'FIT' : '1:1'}</button>
+                    <button type="button" onClick={toggleBoxFill} aria-pressed={boxFill === 'outline'}
+                            aria-label="Show boxes as outline only"
+                            title="Outline only: hides the light fill inside boxes, if your display shows it too strongly"
+                            className="px-2 py-2 rounded bg-gray-700 text-xs font-bold whitespace-nowrap">
+                        {boxFill === 'outline' ? 'Outline' : 'Tint'}
+                    </button>
 
                     {selectedBoxIdx !== null ? (
                         <button onClick={deleteSelectedBox} aria-label={`Delete box ${selectedBoxIdx + 1} (Delete key)`} title="Delete box" className="p-2 bg-red-700 rounded">
@@ -469,6 +500,21 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
                             }}
                         />
                     )}
+                    {/* Tints: a plain layer right above the page image (no z-index, so no isolated stacking context) */}
+                    {boxFill === 'tint' && (
+                        <div aria-hidden="true" className="absolute inset-0 pointer-events-none">
+                            {(boxesMap[String(pageIdx)] || []).map((box, i) => {
+                                const sc = fitWidth && imgRef.current ? (imgRef.current.clientWidth / (imgRef.current.naturalWidth || 800)) : 1;
+                                return <BoxFill key={i} color={BOX_COLORS[box.type === 'image' ? 'image' : 'text'].fill}
+                                                rect={{ left: box.x * sc, top: box.y * sc, width: box.w * sc, height: box.h * sc }} />;
+                            })}
+                            {draftBox && (() => {
+                                const sc = fitWidth && imgRef.current ? (imgRef.current.clientWidth / imgRef.current.naturalWidth) : 1;
+                                return <BoxFill color={BOX_COLORS[draftBox.type === 'image' ? 'image' : 'text'].fill}
+                                                rect={{ left: draftBox.x * sc, top: draftBox.y * sc, width: draftBox.w * sc, height: draftBox.h * sc }} />;
+                            })()}
+                        </div>
+                    )}
                     {/* Overlay */}
                     <div className="absolute inset-0 z-10"
                         onMouseDown={handleMouseDown}
@@ -481,40 +527,43 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
                             const isSelected = selectedBoxIdx === i;
                             const naturalW = imgRef.current?.naturalWidth || 800;
                             const scale = fitWidth && imgRef.current ? (imgRef.current.clientWidth / naturalW) : 1;
+                            const col = BOX_COLORS[box.type === 'image' ? 'image' : 'text'];
+                            const typeLabel = box.type === 'image' ? 'Image' : 'Text';
 
                             return (
                                 <div key={i}
                                     tabIndex={0}
                                     role="button"
-                                    aria-label={`${box.type === 'image' ? 'Image' : 'Text'} box ${i + 1} of ${(boxesMap[String(pageIdx)] || []).length}${isSelected ? ', selected' : ''}`}
+                                    aria-label={`${typeLabel} box ${i + 1} of ${(boxesMap[String(pageIdx)] || []).length}${isSelected ? ', selected' : ''}`}
                                     aria-pressed={isSelected}
                                     onFocus={() => { if (selectedBoxIdx !== i) setSelectedBoxIdx(i); }}
-                                    className={`absolute border-2 flex items-center justify-center group focus-visible:ring-4 focus-visible:ring-white ${box.type === 'image' ? 'border-orange-500 bg-orange-500/20' : 'border-blue-600 bg-blue-600/10'}`}
+                                    className={`wr-box absolute border-2 flex items-center justify-center group focus-visible:ring-4 focus-visible:ring-white ${box.type === 'image' ? 'border-dotted' : 'border-solid'}`}
                                     style={{
                                         left: box.x * scale,
                                         top: box.y * scale,
                                         width: box.w * scale,
                                         height: box.h * scale,
-                                        borderColor: isSelected ? (box.type == 'image' ? 'orange' : 'blue') : undefined,
+                                        borderColor: isSelected ? col.selected : col.border,
                                         zIndex: isSelected ? 20 : 10,
                                         cursor: 'move'
                                     }}>
-                                    <div className={`absolute -top-5 left-0 text-xs px-1.5 py-0.5 font-bold rounded text-white ${box.type === 'image' ? 'bg-orange-700' : 'bg-blue-700'} ${isSelected ? 'ring-1 ring-white' : ''}`}>{i + 1} {box.type === 'image' ? 'Image' : 'Text'}</div>
-                                    {isSelected && (<><div aria-hidden="true" className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-500 cursor-nw-resize hover:bg-blue-200"></div><div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-500 cursor-ne-resize hover:bg-blue-200"></div><div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-500 cursor-sw-resize hover:bg-blue-200"></div><div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-500 cursor-se-resize hover:bg-blue-200"></div></>)}
+                                    {/* Small label above the box. Only the selected box spells out its type (the border style also differs:
+                                        image boxes are dotted), so the labels cover as little of the page as possible. */}
+                                    <div className={`absolute -top-4 left-0 text-[10px] leading-4 px-1 font-bold rounded-sm text-white ${isSelected ? 'ring-1 ring-white' : ''}`}
+                                         style={{ backgroundColor: col.label }}>{isSelected ? `${i + 1} ${typeLabel}` : i + 1}</div>
+                                    {isSelected && (<><div aria-hidden="true" className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-500 cursor-nw-resize hover:bg-blue-200"></div><div aria-hidden="true" className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-500 cursor-ne-resize hover:bg-blue-200"></div><div aria-hidden="true" className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-gray-500 cursor-sw-resize hover:bg-blue-200"></div><div aria-hidden="true" className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-gray-500 cursor-se-resize hover:bg-blue-200"></div></>)}
                                 </div>
                             );
                         })}
-                        {draftBox && (
-                            <div className={`absolute border-2 border-dashed ${draftBox.type === 'image' ? 'border-orange-500 bg-orange-500/10' : 'border-blue-500 bg-blue-500/10'}`}
-                                style={{
-                                    left: draftBox.x * (fitWidth && imgRef.current ? (imgRef.current.clientWidth / imgRef.current.naturalWidth) : 1),
-                                    top: draftBox.y * (fitWidth && imgRef.current ? (imgRef.current.clientWidth / imgRef.current.naturalWidth) : 1),
-                                    width: draftBox.w * (fitWidth && imgRef.current ? (imgRef.current.clientWidth / imgRef.current.naturalWidth) : 1),
-                                    height: draftBox.h * (fitWidth && imgRef.current ? (imgRef.current.clientWidth / imgRef.current.naturalWidth) : 1),
-                                    pointerEvents: 'none'
-                                }}
-                            />
-                        )}
+                        {draftBox && (() => {
+                            const col = BOX_COLORS[draftBox.type === 'image' ? 'image' : 'text'];
+                            const sc = fitWidth && imgRef.current ? (imgRef.current.clientWidth / imgRef.current.naturalWidth) : 1;
+                            return (
+                                <div className="wr-box absolute border-2 border-dashed"
+                                    style={{ left: draftBox.x * sc, top: draftBox.y * sc, width: draftBox.w * sc, height: draftBox.h * sc,
+                                             borderColor: col.border, pointerEvents: 'none' }} />
+                            );
+                        })()}
                     </div>
                 </div>
             </div>
