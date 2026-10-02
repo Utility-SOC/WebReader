@@ -4,6 +4,7 @@ python-multipart
 requests
 pdfplumber
 python-docx
+python-pptx
 pytesseract
 Pillow
 beautifulsoup4

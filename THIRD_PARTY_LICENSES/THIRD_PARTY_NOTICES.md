@@ -84,6 +84,7 @@ situation.
 | python-dateutil | 2.9.0.post0 | Apache Software License; BSD License | https://github.com/dateutil/dateutil |
 | python-docx | 1.2.0 | MIT License | https://github.com/python-openxml/python-docx |
 | python-multipart | 0.0.20 | Apache-2.0 | https://github.com/Kludex/python-multipart |
+| python-pptx | 1.0.2 | MIT License | https://github.com/scanny/python-pptx |
 | PyYAML | 6.0.3 | MIT License | https://pyyaml.org/ |
 | redis | 7.0.1 | MIT | https://github.com/redis/redis-py |
 | regex | 2026.1.15 | Apache-2.0 AND CNRI-Python | https://github.com/mrabarnett/mrab-regex |
@@ -113,6 +114,7 @@ situation.
 | vine | 5.1.0 | BSD License | https://github.com/celery/vine |
 | wcwidth | 0.9.1 | MIT License | https://github.com/jquast/wcwidth |
 | wheel | 0.45.1 | MIT License | https://github.com/pypa/wheel |
+| xlsxwriter | 3.2.9 | BSD License | https://github.com/jmcnamara/XlsxWriter |
 | yarl | 1.22.0 | Apache Software License | https://github.com/aio-libs/yarl |
 
 ## JavaScript packages (frontend, production)

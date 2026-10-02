@@ -8,7 +8,8 @@ A modern web application for speed reading PDFs, EPUBs, and Images using RSVP (R
 
 - **RSVP Speed Reading**: Read faster by eliminating eye movement.
 - **Smart Automatic PDF Import**: Detects multi-column layouts (correct reading order), strips repeated headers/footers and standalone page numbers, and repairs words hyphenated across line breaks.
-- **Format Support**: PDF, EPUB, TXT, DOCX, and **Images** (.png, .jpg, .webp).
+- **Format Support**: PDF, EPUB, TXT, DOCX, PPTX, and **Images** (.png, .jpg, .webp).
+- **Accessibility analysis**: DOCX, PPTX and PDF files are checked for missing alt text, titles and language, heading and table structure, slide titles and reading order, and untagged PDFs. The result lists what is still open; it is not a compliance claim.
 - **OCR Integration**: Automatically extracts text from scanned PDFs and images using Tesseract.
 - **AI Image Captioning** *(Docker/Kubernetes only, optional)*: Photos and figures with no embedded text get an AI-generated description (via Florence-2) woven into the text WebReader reads and speaks, instead of being skipped entirely. Not included in the desktop build — see [Installation](#installation).
 - **Text-to-Speech (TTS)**: Generate and download an MP3/WAV audio version of your document.

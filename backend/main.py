@@ -343,6 +343,8 @@ async def fetch_url(item: Dict[str, str] = Body(...)):
             ext = ".mobi"
         elif ".docx" in lower_name or "wordprocessing" in content_type:
             ext = ".docx"
+        elif ".pptx" in lower_name or "presentationml" in content_type:
+            ext = ".pptx"
         elif any(x in lower_name or x in content_type for x in ["image", ".png", ".jpg", ".jpeg", ".webp"]):
             # Simple detection
             if ".png" in lower_name: ext = ".png"
@@ -428,6 +430,8 @@ async def upload_document(
         elif lower_name.endswith(".epub"): file_type = "epub"
         elif lower_name.endswith((".mobi", ".azw3")): file_type = "mobi"
         elif lower_name.endswith(".txt"): file_type = "txt"
+        elif lower_name.endswith(".docx"): file_type = "docx"
+        elif lower_name.endswith(".pptx"): file_type = "pptx"
         elif lower_name.endswith((".png", ".jpg", ".jpeg", ".webp")): file_type = "image"
         
         # 2. Create Document Record

@@ -397,9 +397,9 @@ function App() {
                         <UploadCloud size={32} className={`transition-colors group-hover:text-indigo-500 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
                         <span className="text-sm font-medium opacity-90">Drop file or click to browse</span>
                       </div>
-                      <input type="file" onChange={handleUpload} aria-label="Choose a document to read" accept=".pdf,.epub,.mobi,.azw3,.txt,.docx,.png,.jpg,.jpeg,.webp" className="sr-only peer" />
+                      <input type="file" onChange={handleUpload} aria-label="Choose a document to read" accept=".pdf,.epub,.mobi,.azw3,.txt,.docx,.pptx,.png,.jpg,.jpeg,.webp" className="sr-only peer" />
                     </label>
-                    <p className="text-xs font-mono opacity-70 mt-6">SUPPORTS PDF, EPUB, MOBI, TXT, DOCX, IMAGES</p>
+                    <p className="text-xs font-mono opacity-70 mt-6">SUPPORTS PDF, EPUB, MOBI, TXT, DOCX, PPTX, IMAGES</p>
                   </div>}
                 </div>
               ) : (
