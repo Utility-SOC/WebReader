@@ -36,3 +36,23 @@ h6 {
 ::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
 }
+
+/* ---- Accessibility ---- */
+
+/* Visible keyboard focus on everything interactive */
+:focus-visible {
+  outline: 3px solid #818cf8;
+  outline-offset: 2px;
+}
+
+/* Honour the OS "reduce motion" setting: no animation, no transitions */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
