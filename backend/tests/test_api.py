@@ -265,3 +265,37 @@ def test_fetch_url_endpoint_blocks_internal_targets(local_server, monkeypatch):
     assert r.status_code == 400
     r = client.post("/fetch_url", json={"url": local_server[0] + "/hello"})
     assert r.status_code == 400 and "can't be fetched" in r.json()["detail"]
+
+
+# ---- /tts/speak (word-synced read aloud; the real edge-tts call is stubbed)
+
+def test_tts_speak_returns_audio_and_word_boundaries(monkeypatch):
+    import base64
+    import backend.main as m
+
+    async def fake(text, voice_id=None):
+        assert text == "Hello there world"          # whitespace normalised, text otherwise untouched
+        return b"AUDIO", [{"text": "Hello", "offset_ms": 0.0, "duration_ms": 200.0}]
+
+    monkeypatch.setattr(m, "_synthesize_with_word_boundaries", fake)
+    r = client.post("/tts/speak", json={"text": "Hello   there\nworld"})
+    assert r.status_code == 200
+    body = r.json()
+    assert base64.b64decode(body["audio_base64"]) == b"AUDIO" and body["boundaries"][0]["text"] == "Hello"
+
+
+def test_tts_speak_rejects_empty_text_and_reports_failures(monkeypatch):
+    import backend.main as m
+    assert client.post("/tts/speak", json={"text": "   "}).status_code == 400
+
+    async def boom(text, voice_id=None):
+        raise RuntimeError("service unreachable")
+
+    monkeypatch.setattr(m, "_synthesize_with_word_boundaries", boom)
+    r = client.post("/tts/speak", json={"text": "hello"})
+    assert r.status_code == 500 and "service unreachable" in r.json()["detail"]
+
+
+def test_tts_speak_is_not_available_in_a_reading_room(monkeypatch):
+    monkeypatch.setenv("WEBREADER_MODE", "reading_room")
+    assert client.post("/tts/speak", json={"text": "hello"}).status_code == 404

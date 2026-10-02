@@ -9,6 +9,19 @@ export const FONTS = [
     { name: "Comic Sans MS", label: "Comic Sans (Casual)", family: "'Comic Sans MS', 'Comic Sans', cursive" }
 ];
 
+// Colorblind-safe quick-picks for the ORP highlight color, alongside the
+// freeform picker. Okabe-Ito and IBM's palette were both designed to stay
+// distinguishable under the common forms of color vision deficiency.
+export const ORP_COLOR_PRESETS = [
+    { name: "Vermillion", hex: "#D55E00", palette: "Okabe-Ito" },
+    { name: "Sky Blue", hex: "#56B4E9", palette: "Okabe-Ito" },
+    { name: "Bluish Green", hex: "#009E73", palette: "Okabe-Ito" },
+    { name: "Orange", hex: "#E69F00", palette: "Okabe-Ito" },
+    { name: "IBM Blue", hex: "#648FFF", palette: "IBM" },
+    { name: "IBM Magenta", hex: "#DC267F", palette: "IBM" },
+    { name: "IBM Gold", hex: "#FFB000", palette: "IBM" },
+];
+
 export const PRESETS = {
     standard: {
         id: "standard",

@@ -7,8 +7,8 @@ import ImageGallery from './components/ImageGallery';
 import ChapterSelector from './components/ChapterSelector';
 import AudioModal from './components/AudioModal';
 import Library, { DocumentAbout } from './components/Library';
-import { Play, Pause, RotateCcw, Image, BookOpen, Volume2, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
-import { PRESETS, FONTS } from './constants';
+import { Play, Pause, RotateCcw, Image, BookOpen, Volume2, Headphones, Moon, Sun, ChevronLeft, ChevronRight, UploadCloud, FileText, X, Download } from 'lucide-react';
+import { PRESETS, FONTS, ORP_COLOR_PRESETS } from './constants';
 
 const PREFS_KEY = "webreader:preferences:v1";
 
@@ -58,6 +58,13 @@ function App() {
   const [showGallery, setShowGallery] = useState(false);
   const [showAudioModal, setShowAudioModal] = useState(false);
   const [manualBoxes, setManualBoxes] = useState(null);
+
+  // Word-Flash Sync: read the document aloud (edge-tts) with the RSVP display advancing in time with
+  // playback, instead of the fixed-WPM timer.
+  const [readAloud, setReadAloud] = useState(false);
+  const [ttsLoading, setTtsLoading] = useState(false);
+  const audioElRef = useRef(null);
+  const speakChunkRef = useRef({ startIndex: 0, chunkLength: 0, boundaries: [] });
 
   // Dynamic Punctuation State
   const [punctuationRules, setPunctuationRules] = useState(savedPrefs.punctuationRules || [
@@ -146,6 +153,8 @@ function App() {
   // one with the other extraction mode — automatic vs. manual — since that
   // choice is only offered at upload time).
   const resetToUpload = () => {
+    audioElRef.current?.pause();
+    setReadAloud(false);
     setWords([]);
     setImages([]);
     setChapters([]);
@@ -251,21 +260,35 @@ function App() {
     return () => clearInterval(interval);
   }, [loading, taskId]);
 
-  // Spacebar Play/Pause
+  // Keyboard: Space plays/pauses; Left/Right skip 50 words. Only on the reader view, never while typing in a
+  // control or with a dialog open, and Space is left alone on buttons/links (it activates them).
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (showEditor) return;
+      if (showEditor || view !== 'reader') return;
       const tag = document.activeElement?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY') return;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (document.querySelector('[role="dialog"]')) return;
       if (e.code === "Space") {
+        if (tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY') return;
         e.preventDefault();
-        setIsPlaying(prev => !prev);
+        // Mirrors handleMainPlayPause: while readAloud is on, Play/Pause controls the <audio> element.
+        if (readAloud) {
+          if (isPlaying) { audioElRef.current?.pause(); setIsPlaying(false); }
+          else { audioElRef.current?.play(); setIsPlaying(true); }
+        } else {
+          setIsPlaying(prev => !prev);
+        }
+      } else if (e.code === "ArrowLeft" && words.length > 0) {
+        e.preventDefault();
+        setIndex(prev => Math.max(0, prev - 50));
+      } else if (e.code === "ArrowRight" && words.length > 0) {
+        e.preventDefault();
+        setIndex(prev => Math.min(words.length, prev + 50));
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showEditor]);
+  }, [showEditor, view, words.length, readAloud, isPlaying]);
 
   // Mouse Wheel Speed Control — scroll over the reader to speed up/slow down
   const readerCardRef = useRef(null);
@@ -320,9 +343,9 @@ function App() {
     URL.revokeObjectURL(url);
   };
 
-  // Loop
+  // Loop (fixed-WPM auto-advance; suspended while readAloud drives index instead)
   useEffect(() => {
-    if (isPlaying && index < words.length) {
+    if (isPlaying && !readAloud && index < words.length) {
       const delay = (60000 / settings.wpm) * settings.chunkSize;
       let multiplier = 1;
       const word = words[index];
@@ -339,8 +362,110 @@ function App() {
       timerRef.current = setTimeout(() => setIndex(prev => prev + settings.chunkSize), delay * multiplier);
     }
     return () => clearTimeout(timerRef.current);
-  }, [isPlaying, index, words, settings, punctuationRules]);
+  }, [isPlaying, readAloud, index, words, settings, punctuationRules]);
 
+  // Word-Flash Sync: fetch + play one chunk of audio starting at startIdx, then chain into the next chunk on
+  // 'ended' while readAloud stays on.
+  const SPEAK_CHUNK_SIZE = 60;
+  const playChunkFrom = async (startIdx) => {
+    if (startIdx >= words.length) {
+      setReadAloud(false);
+      setIsPlaying(false);
+      return;
+    }
+    const chunkWords = words.slice(startIdx, startIdx + SPEAK_CHUNK_SIZE);
+    const speakableText = chunkWords.filter(w => !w.startsWith("[FIGURE:")).join(" ");
+
+    if (!speakableText.trim()) {
+      // Pure-image chunk (e.g. a page of figures): nothing to speak, advance past it.
+      playChunkFrom(startIdx + chunkWords.length);
+      return;
+    }
+
+    setTtsLoading(true);
+    try {
+      const res = await fetch("/tts/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: speakableText })
+      });
+      if (!res.ok) throw new Error(`TTS request failed (${res.status})`);
+      const data = await res.json();
+
+      const byteChars = atob(data.audio_base64);
+      const byteNumbers = new Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([new Uint8Array(byteNumbers)], { type: "audio/mpeg" });
+      const url = URL.createObjectURL(blob);
+
+      speakChunkRef.current = { startIndex: startIdx, chunkLength: chunkWords.length, boundaries: data.boundaries || [] };
+
+      const audioEl = audioElRef.current;
+      if (audioEl) {
+        if (audioEl.src) URL.revokeObjectURL(audioEl.src);
+        audioEl.src = url;
+        await audioEl.play();
+      }
+    } catch (err) {
+      console.error("Read-aloud failed:", err);
+      alert("Read Aloud failed: " + err.message);
+      setReadAloud(false);
+      setIsPlaying(false);
+    } finally {
+      setTtsLoading(false);
+    }
+  };
+
+  // Map audio playback time -> word index within the current chunk. edge-tts's own tokenization doesn't always
+  // match ours 1:1 (numbers expand to words, contractions split), so this maps by *position* (which boundary
+  // we're past, scaled onto the chunk's word count) rather than by re-matching text.
+  const handleReadAloudTimeUpdate = () => {
+    const { startIndex, chunkLength, boundaries } = speakChunkRef.current;
+    if (!boundaries.length || !chunkLength) return;
+    const currentMs = (audioElRef.current?.currentTime || 0) * 1000;
+
+    let boundaryIdx = 0;
+    for (let i = 0; i < boundaries.length; i++) {
+      if (boundaries[i].offset_ms <= currentMs) boundaryIdx = i;
+      else break;
+    }
+    const proportion = boundaries.length > 1 ? boundaryIdx / (boundaries.length - 1) : 0;
+    const wordOffset = Math.min(chunkLength - 1, Math.round(proportion * (chunkLength - 1)));
+    setIndex(startIndex + wordOffset);
+  };
+
+  const handleReadAloudEnded = () => {
+    const { startIndex, chunkLength } = speakChunkRef.current;
+    if (readAloud) playChunkFrom(startIndex + chunkLength);
+  };
+
+  const toggleReadAloud = () => {
+    if (readAloud) {
+      setReadAloud(false);
+      setIsPlaying(false);
+      audioElRef.current?.pause();
+    } else {
+      setIsPlaying(true);
+      setReadAloud(true);
+      playChunkFrom(index);
+    }
+  };
+
+  // Play/Pause has to control the <audio> element while readAloud is active, instead of just flipping isPlaying
+  // (which the fixed-WPM timer above no longer reads while readAloud is on).
+  const handleMainPlayPause = () => {
+    if (readAloud) {
+      if (isPlaying) {
+        audioElRef.current?.pause();
+        setIsPlaying(false);
+      } else {
+        audioElRef.current?.play();
+        setIsPlaying(true);
+      }
+    } else {
+      setIsPlaying(prev => !prev);
+    }
+  };
 
   if (showEditor && tempFile) {
     return <PdfManualEditor
@@ -457,7 +582,7 @@ function App() {
                   </div>}
                 </div>
               ) : (
-                <div className="w-full h-full flex items-center justify-center cursor-pointer" onClick={() => setIsPlaying(!isPlaying)}>
+                <div className="w-full h-full flex items-center justify-center cursor-pointer" onClick={handleMainPlayPause}>
                   <RSVPDisplay words={words} images={images} index={index} settings={settings} appearance={appearance} isDark={isDark} />
                 </div>
               )}
@@ -507,14 +632,30 @@ function App() {
                       </button>
                     )}
 
+                    {!readingRoom && (
+                      <button
+                        type="button"
+                        onClick={toggleReadAloud}
+                        disabled={ttsLoading}
+                        aria-label={readAloud ? "Stop reading aloud" : "Read aloud (word-synced narration)"}
+                        aria-pressed={readAloud}
+                        title="Read Aloud"
+                        className={`p-2.5 rounded-xl transition-all disabled:opacity-60 ${readAloud ? (isDark ? 'bg-indigo-500/30 text-indigo-200' : 'bg-indigo-100 text-indigo-800') : (isDark ? 'hover:bg-white/10 text-gray-300 hover:text-white' : 'hover:bg-gray-100 text-gray-700')}`}
+                      >
+                        <Headphones size={20} />
+                      </button>
+                    )}
+
                     {/* DOWNLOADS */}
                     <div className="flex gap-1 ml-2 pl-2 border-l border-white/10">
                       <button onClick={downloadTranscript} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-300 hover:text-white' : 'hover:bg-gray-100 text-gray-700'}`} title="Download Transcript" aria-label="Download transcript">
                         <FileText size={20} />
                       </button>
-                      <button onClick={() => setShowAudioModal(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-300 hover:text-white' : 'hover:bg-gray-100 text-gray-700'}`} title="Download Audio (TTS)" aria-label="Download audio (text to speech)">
-                        <Volume2 size={20} />
-                      </button>
+                      {!readingRoom && (
+                        <button onClick={() => setShowAudioModal(true)} className={`p-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-300 hover:text-white' : 'hover:bg-gray-100 text-gray-700'}`} title="Download Audio (TTS)" aria-label="Download audio (text to speech)">
+                          <Volume2 size={20} />
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -525,7 +666,7 @@ function App() {
                     </button>
 
                     <button
-                      onClick={() => setIsPlaying(!isPlaying)}
+                      onClick={handleMainPlayPause}
                       aria-label={isPlaying ? "Pause" : "Play"}
                       className="group relative"
                     >
@@ -662,6 +803,20 @@ function App() {
                     />
                     <span className="text-xs opacity-75">Red is the common convention (strongest contrast against body text); pick whatever reads best for you.</span>
                   </div>
+                  <div className="flex flex-wrap gap-2 mt-3" role="group" aria-label="Colour-blind-safe highlight colours">
+                    {ORP_COLOR_PRESETS.map(preset => (
+                      <button
+                        key={preset.hex}
+                        type="button"
+                        onClick={() => setAppearance({ ...appearance, orpColor: preset.hex })}
+                        title={`${preset.name} (${preset.palette} colour-blind-safe palette)`}
+                        aria-label={`Use ${preset.name}, a ${preset.palette} colour-blind-safe colour, for the highlight`}
+                        aria-pressed={appearance.orpColor === preset.hex}
+                        className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${appearance.orpColor === preset.hex ? (isDark ? 'border-white' : 'border-gray-900') : 'border-transparent'}`}
+                        style={{ backgroundColor: preset.hex }}
+                      />
+                    ))}
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                   <label className={`flex items-center gap-2 cursor-pointer select-none p-2.5 rounded-lg text-sm ${isDark ? 'bg-black/20 hover:bg-black/30' : 'bg-gray-50 hover:bg-gray-100'}`}>
@@ -703,6 +858,9 @@ function App() {
           </>)}
         </main>
       </div>
+
+      {/* Word-Flash Sync playback element: kept mounted across chunk transitions so onEnded can chain the next chunk. */}
+      <audio ref={audioElRef} onTimeUpdate={handleReadAloudTimeUpdate} onEnded={handleReadAloudEnded} className="hidden" />
 
       {/* Modals */}
       {showChapterSelector && <ChapterSelector
