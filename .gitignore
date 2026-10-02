@@ -53,3 +53,6 @@ THIRD_PARTY_LICENSES/tesseract-dist-*
 Thumbs.db
 .vscode/
 .idea/
+
+# npm dependencies (any package in the repo)
+node_modules/

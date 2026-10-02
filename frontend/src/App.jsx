@@ -69,6 +69,12 @@ function App() {
     { str: "\n\n", val: 3.0 }
   ]);
 
+  // Reading-room deployments have no uploads (the server answers 404 to them)
+  const [readingRoom, setReadingRoom] = useState(false);
+  useEffect(() => {
+    fetch('/health').then(r => r.json()).then(d => setReadingRoom(d.mode === 'reading_room')).catch(() => {});
+  }, []);
+
   // Persist reading/appearance preferences across reloads
   useEffect(() => {
     try {
@@ -381,11 +387,11 @@ function App() {
                       No document loaded
                     </h2>
                     <p className={`text-lg ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Upload a file to begin reading.
+                      {readingRoom ? 'This reading room has no documents available yet.' : 'Upload a file to begin reading.'}
                     </p>
                   </div>
 
-                  <div className="pt-4">
+                  {!readingRoom && <div className="pt-4">
                     <label className="group relative inline-flex flex-col items-center gap-4 cursor-pointer">
                       <div className={`w-full h-32 w-64 border-2 border-dashed rounded-2xl peer-focus-visible:ring-4 peer-focus-visible:ring-indigo-500 flex flex-col items-center justify-center gap-3 transition-all duration-300 group-hover:border-indigo-500/50 group-hover:bg-indigo-500/5 ${isDark ? 'border-gray-700 bg-gray-800/50' : 'border-gray-300 bg-white/50'}`}>
                         <UploadCloud size={32} className={`transition-colors group-hover:text-indigo-500 ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
@@ -394,7 +400,7 @@ function App() {
                       <input type="file" onChange={handleUpload} aria-label="Choose a document to read" accept=".pdf,.epub,.mobi,.azw3,.txt,.docx,.png,.jpg,.jpeg,.webp" className="sr-only peer" />
                     </label>
                     <p className="text-xs font-mono opacity-70 mt-6">SUPPORTS PDF, EPUB, MOBI, TXT, DOCX, IMAGES</p>
-                  </div>
+                  </div>}
                 </div>
               ) : (
                 <div className="w-full h-full flex items-center justify-center cursor-pointer" onClick={() => setIsPlaying(!isPlaying)}>

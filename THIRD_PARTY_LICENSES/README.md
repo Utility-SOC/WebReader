@@ -38,3 +38,13 @@ The Windows Tesseract build links permissively licensed libraries (libpng,
 libjpeg, libtiff, zlib, openjpeg, and others). Their license texts, as
 shipped with the upstream Tesseract Windows distribution, are copied into
 this folder at build time when available.
+
+
+## Fonts
+
+The web UI bundles these typefaces (via the `@fontsource/*` npm packages) so
+that no request is made to a font CDN: Inter, Outfit, Atkinson Hyperlegible,
+OpenDyslexic, Lexend, Merriweather and Noto Sans. All are licensed under the
+SIL Open Font License 1.1; each package's `LICENSE` file ships in
+`frontend/node_modules/@fontsource/<name>/LICENSE` and is included in the
+built frontend's dependency tree.
