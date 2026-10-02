@@ -54,6 +54,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "webreader.fullname" . }}-env
+            {{- with (include "webreader.aiSecretName" .) }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
           volumeMounts:
             - name: data
               mountPath: /app/backend/temp_uploads

@@ -173,6 +173,7 @@ jobs:
         # just the repo-root docker-compose.yml (that one builds from
         # source and bind-mounts it for local dev).
         run: |
+          cp scripts/setup-ai.sh deploy/docker/setup-ai.sh
           cd deploy/docker
           zip -r ../../WebReader-Docker-Deploy.zip .
           cd ../..

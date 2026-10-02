@@ -25,6 +25,7 @@ from .utils import (
     TESSERACT_CMD
 )
 from .tasks import process_document_background
+from . import providers
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -124,6 +125,11 @@ def api_root():
 @app.get("/health")
 def health():
     return {"status": "running"}
+
+@app.get("/ai/status")
+def ai_status():
+    """Which AI backend is configured (never includes the API key)."""
+    return providers.status()
 
 @app.post("/upload_temp")
 async def upload_temp(file: UploadFile = File(...)):

@@ -39,6 +39,11 @@ import threading
 
 from PIL import Image
 
+try:
+    from . import providers
+except ImportError:  # desktop build runs backend modules as top-level scripts
+    import providers
+
 logger = logging.getLogger("SpeedReaderUtils")
 
 MODEL_ID = "microsoft/Florence-2-base"
@@ -59,7 +64,7 @@ try:
     _AVAILABLE = True
 except ImportError as e:
     _AVAILABLE = False
-    logger.warning(
+    (logger.warning if providers.caption_provider() == "local" else logger.info)(
         f"Image captioning disabled: {e}. Install torch/transformers/timm/einops "
         "(see backend/requirements.txt) to enable it. Falling back to OCR-only "
         "image processing."
@@ -112,6 +117,16 @@ def caption_image(image: Image.Image) -> str:
     deps, failed to load, or any per-image error) -- this is an enhancement
     to document processing, not something that should fail the whole task
     over a model that won't run on this machine."""
+    provider = providers.caption_provider()
+    if provider == "none":
+        return ""
+    if provider != "local":
+        try:
+            return providers.caption_via_api(image, provider)
+        except Exception as e:
+            # Message only -- never the request, which carries the API key.
+            logger.error(f"Captioning via '{provider}' failed: {e}")
+            return ""
     if not _AVAILABLE:
         return ""
     try:

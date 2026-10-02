@@ -108,6 +108,23 @@ unzip WebReader-Kubernetes-Deploy.zip -d webreader-k8s && cd webreader-k8s
 ./deploy.sh [release-name] [namespace]   # both optional, default to "webreader"
 ```
 
+## AI providers (image captioning)
+
+Captioning describes photos and figures so they are read aloud and shown as image alt text. Choose where it runs:
+
+| Provider | `WEBREADER_CAPTION_PROVIDER` | Private? | Notes |
+|---|---|---|---|
+| Local model | `local` (default) | Yes — nothing leaves your machine | Florence-2 on CPU, ~2.5GB RAM; Docker/Kubernetes only |
+| OpenAI-compatible APIs | `openai`, `deepseek`, `kimi`, `custom` | No — images are sent to the provider | `custom` takes any compatible endpoint via `WEBREADER_LLM_BASE_URL` (including a self-hosted one) |
+| Native APIs | `gemini`, `anthropic` | No | |
+| Off | `none` | Yes | |
+
+For anything but `local` and `none` you also set `WEBREADER_LLM_MODEL` (it must accept images; DeepSeek's text-only models won't) and `WEBREADER_LLM_API_KEY`. These are API keys you paste in, not account logins. API providers need no ML libraries, so they also work in the lightweight desktop install (Option 1).
+
+- **Desktop / Docker Compose:** run `./scripts/setup-ai.sh` (it prompts, hides the key, and writes `.env` readable only by you), then restart. On Windows, create `.env` with the variables above; `run_windows.ps1` loads it. The Docker release zip includes `setup-ai.sh` too.
+- **Kubernetes:** set the `ai:` block in `charts/webreader/values.yaml`. Prefer `ai.existingSecret` (a Secret you create with a `WEBREADER_LLM_API_KEY` key) over `ai.apiKey`, so the key stays out of Helm release history.
+- `GET /ai/status` shows the active provider (never the key).
+
 ## Configuration
 
 Environment variables the backend/worker read (already set correctly by
@@ -120,6 +137,7 @@ things manually or debugging):
 | `TESSERACT_CMD` | auto-detected | Path to the `tesseract` binary, if it's not on `PATH` |
 | `WEBREADER_EMBEDDED` | unset | Set to `1` to run Celery tasks in-process with no Redis/worker needed (used by the desktop build) |
 | `WEBREADER_DATA_DIR` | next to the source | Where the desktop app stores its SQLite database and settings |
+| `WEBREADER_CAPTION_PROVIDER`, `WEBREADER_LLM_MODEL`, `WEBREADER_LLM_API_KEY`, `WEBREADER_LLM_BASE_URL` | `local` | See [AI providers](#ai-providers-image-captioning) |
 | `ML_MEM_LIMIT` | `4g` | Docker Compose only — memory cap for the backend/worker containers; auto-written to `.env` by `scripts/detect-ml-mem-limit.sh` |
 
 ## Basic Tutorial
