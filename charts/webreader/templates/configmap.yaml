@@ -7,3 +7,10 @@ metadata:
 data:
   CELERY_BROKER_URL: "redis://{{ include "webreader.fullname" . }}-redis:6379/0"
   TESSERACT_CMD: {{ .Values.env.tesseractCmd | quote }}
+  WEBREADER_CAPTION_PROVIDER: {{ .Values.ai.captionProvider | quote }}
+  {{- if .Values.ai.model }}
+  WEBREADER_LLM_MODEL: {{ .Values.ai.model | quote }}
+  {{- end }}
+  {{- if .Values.ai.baseUrl }}
+  WEBREADER_LLM_BASE_URL: {{ .Values.ai.baseUrl | quote }}
+  {{- end }}

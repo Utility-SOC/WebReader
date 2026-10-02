@@ -25,6 +25,11 @@ from .utils import (
     TESSERACT_CMD
 )
 from .tasks import process_document_background
+from . import providers
+from .safe_http import safe_get, BlockedAddressError
+
+# Largest file /fetch_url will download
+MAX_FETCH_BYTES = int(os.environ.get("WEBREADER_MAX_FETCH_MB", "200")) * 1024 * 1024
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -40,11 +45,53 @@ from PIL import Image
 
 app = FastAPI()
 
-# Allow CORS
+# --- Deployment mode -------------------------------------------------------
+# personal      (default) upload your own files; what the desktop build and
+#               local Docker use.
+# reading_room  public document library: no uploads, no URL fetching, no
+#               request logging, same-origin only. Anything not on the public
+#               allowlist below answers 404, so a route added later can't
+#               become public by accident.
+_MODES = {"personal": "personal", "reading_room": "reading_room", "reading-room": "reading_room"}
+READING_ROOM_PUBLIC_PREFIXES = ("/health", "/library")
+
+
+def app_mode() -> str:
+    raw = os.environ.get("WEBREADER_MODE", "personal").strip().lower() or "personal"
+    if raw not in _MODES:
+        # Fail closed: a typo like "readingroom" must not silently start with uploads enabled.
+        raise ValueError(f"WEBREADER_MODE='{raw}' is not valid; use 'personal' or 'reading_room'")
+    return _MODES[raw]
+
+
+app_mode()  # validate at startup
+
+
+@app.middleware("http")
+async def reading_room_gate(request, call_next):
+    if app_mode() == "reading_room" and not request.url.path.startswith(READING_ROOM_PUBLIC_PREFIXES):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    return await call_next(request)
+
+
+@app.on_event("startup")
+def _quiet_logs_in_reading_room():
+    # Access logs hold visitor IPs and the documents they opened. A reading
+    # room doesn't keep them. (Added at startup, after uvicorn configures logging.)
+    if app_mode() == "reading_room":
+        logging.getLogger("uvicorn.access").addFilter(lambda record: False)
+        logger.info("Reading-room mode: request logging disabled")
+
+
+# Allow CORS. Personal mode keeps "*" (local desktop use). A reading room is
+# same-origin by default; list origins in WEBREADER_CORS_ORIGINS to allow more.
+_cors = [o.strip() for o in os.environ.get("WEBREADER_CORS_ORIGINS", "").split(",") if o.strip()]
+if not _cors and app_mode() == "personal":
+    _cors = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors,
+    allow_credentials=_cors != ["*"] and bool(_cors),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -123,7 +170,12 @@ def api_root():
 
 @app.get("/health")
 def health():
-    return {"status": "running"}
+    return {"status": "running", "mode": app_mode()}
+
+@app.get("/ai/status")
+def ai_status():
+    """Which AI backend is configured (never includes the API key)."""
+    return providers.status()
 
 @app.post("/upload_temp")
 async def upload_temp(file: UploadFile = File(...)):
@@ -256,7 +308,7 @@ async def fetch_url(item: Dict[str, str] = Body(...)):
     
     try:
         # Download (follow redirects to get final URL/headers)
-        resp = requests.get(url, stream=True, allow_redirects=True)
+        resp = safe_get(url)
         resp.raise_for_status()
         
         # 1. Try filename from Content-Disposition
@@ -305,8 +357,14 @@ async def fetch_url(item: Dict[str, str] = Body(...)):
             filename += ext
 
         path = os.path.join(TEMP_DIR, filename)
+        written = 0
         with open(path, "wb") as f:
             for chunk in resp.iter_content(chunk_size=8192):
+                written += len(chunk)
+                if written > MAX_FETCH_BYTES:
+                    f.close()
+                    os.remove(path)
+                    raise HTTPException(413, f"File is larger than the {MAX_FETCH_BYTES // (1024 * 1024)} MB limit")
                 f.write(chunk)
                 
         info = {
@@ -339,6 +397,11 @@ async def fetch_url(item: Dict[str, str] = Body(...)):
                 
         return info
         
+    except HTTPException:
+        raise
+    except BlockedAddressError as e:
+        logger.warning(f"Fetch blocked: {e}")
+        raise HTTPException(400, "That address can't be fetched.")
     except Exception as e:
         logger.error(f"Fetch failed: {e}")
         raise HTTPException(500, str(e))

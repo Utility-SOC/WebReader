@@ -56,7 +56,12 @@ if [ ! -z "$MISSING" ]; then
     echo
 fi
 
-# 5. Launch
+# 5. Load AI provider settings (written by scripts/setup-ai.sh), if any
+if [ -f .env ]; then
+    set -a; . ./.env; set +a
+fi
+
+# 6. Launch
 echo "[INFO] Starting Server on port $PORT..."
 if [[ "$OSTYPE" == "darwin"* ]]; then
     open "http://localhost:$PORT"

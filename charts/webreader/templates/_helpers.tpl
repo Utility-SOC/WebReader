@@ -21,3 +21,13 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
+
+{{/* Name of the Secret holding WEBREADER_LLM_API_KEY ("" when using a local provider) */}}
+{{- define "webreader.aiSecretName" -}}
+{{- if has .Values.ai.captionProvider (list "local" "none") -}}
+{{- else if .Values.ai.existingSecret -}}
+{{ .Values.ai.existingSecret }}
+{{- else -}}
+{{ include "webreader.fullname" . }}-llm
+{{- end -}}
+{{- end }}

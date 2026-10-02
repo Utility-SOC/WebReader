@@ -87,6 +87,13 @@ jobs:
           Get-ChildItem $tess -Recurse -Include "*LICENSE*","*license*","*COPYING*" -File -ErrorAction SilentlyContinue |
             ForEach-Object { Copy-Item $_.FullName ("THIRD_PARTY_LICENSES/tesseract-dist-" + $_.Name) -Force }
 
+      - name: Generate Python license texts (bundled into the desktop zip)
+        shell: pwsh
+        run: |
+          pip install pip-licenses
+          pip-licenses --format=plain-vertical --with-license-file --no-license-path --with-notice-file --with-system --ignore-packages pip-licenses prettytable |
+            Out-File -Encoding utf8 THIRD_PARTY_LICENSES/python-license-texts.txt
+
       - name: Build desktop executable
         run: pyinstaller webreader.spec
 
@@ -173,6 +180,7 @@ jobs:
         # just the repo-root docker-compose.yml (that one builds from
         # source and bind-mounts it for local dev).
         run: |
+          cp scripts/setup-ai.sh deploy/docker/setup-ai.sh
           cd deploy/docker
           zip -r ../../WebReader-Docker-Deploy.zip .
           cd ../..
