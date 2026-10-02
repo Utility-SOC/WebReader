@@ -424,7 +424,7 @@ const PdfManualEditor = ({ filename, pageCount, initialBoxes, onCancel, onFinish
                 <span className="text-gray-300 text-xs ml-auto">Arrows move · Shift+arrows resize · Ctrl = 10× · Delete removes</span>
             </div>
 
-            <div className="flex-1 overflow-auto bg-gray-500 flex justify-center p-2 sm:p-4 cursor-default">
+            <div tabIndex={0} role="region" aria-label="PDF page. Scrollable." className="flex-1 overflow-auto bg-gray-500 flex justify-center p-2 sm:p-4 cursor-default">
                 <div className="relative shadow-2xl bg-white select-none box-default outline-none"
                     style={{
                         alignSelf: 'flex-start',

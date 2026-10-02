@@ -5,7 +5,7 @@ import Modal from './Modal';
 const ChapterSelector = ({ chapters, onSelect, onClose }) => {
     return (
         <Modal labelId="chapters-title" onClose={onClose} className="fixed inset-0 bg-gray-900 bg-opacity-95 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] flex flex-col">
+            <div className="bg-white text-gray-900 rounded-lg shadow-2xl max-w-md w-full max-h-[80vh] flex flex-col">
                 <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-lg">
                     <h2 id="chapters-title" className="font-bold text-lg">Select Start Chapter</h2>
                     <button onClick={onClose} aria-label="Close chapter list" className="text-gray-600 hover:text-red-600"><X size={20} /></button>

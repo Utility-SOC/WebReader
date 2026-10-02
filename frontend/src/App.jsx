@@ -370,7 +370,7 @@ function App() {
                     </div>
                   </div>
                   <div className="text-center">
-                    <h3 className="text-xl font-medium text-indigo-400 mb-2">{statusMessage}</h3>
+                    <h3 className={`text-xl font-medium ${isDark ? 'text-indigo-300' : 'text-indigo-700'} mb-2`}>{statusMessage}</h3>
                     <p className="text-sm opacity-75">Optimizing text extraction...</p>
                   </div>
                 </div>
@@ -493,7 +493,7 @@ function App() {
                 <div className="w-[80%] mx-auto mt-6">
                   <div className="flex justify-between text-xs font-medium tracking-wider opacity-80 mb-1">
                     <span id="lbl-speed-main">SPEED</span>
-                    <span className="text-indigo-400 font-mono">{settings.wpm} WPM</span>
+                    <span className={`${isDark ? 'text-indigo-300' : 'text-indigo-700'} font-mono`}>{settings.wpm} WPM</span>
                   </div>
                   <input
                     type="range" min="100" max="900" step="10" aria-labelledby="lbl-speed-main" aria-valuetext={`${settings.wpm} words per minute`}
@@ -547,18 +547,18 @@ function App() {
                 </select>
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <div className="flex justify-between text-xs opacity-70 mb-1"><span id="lbl-size">Size</span><span>{appearance.fontSize}px</span></div>
+                    <div className="flex justify-between text-xs opacity-90 mb-1"><span id="lbl-size">Size</span><span>{appearance.fontSize}px</span></div>
                     <input aria-labelledby="lbl-size" type="range" min="24" max="120" value={appearance.fontSize} onChange={(e) => setAppearance({ ...appearance, fontSize: Number(e.target.value) })} className="w-full" />
                   </div>
                   <div>
-                    <div className="flex justify-between text-xs opacity-70 mb-1"><span id="lbl-width">Width</span><span>{appearance.containerWidth}px</span></div>
+                    <div className="flex justify-between text-xs opacity-90 mb-1"><span id="lbl-width">Width</span><span>{appearance.containerWidth}px</span></div>
                     <input aria-labelledby="lbl-width" type="range" min="400" max="1400" step="20" value={appearance.containerWidth} onChange={(e) => setAppearance({ ...appearance, containerWidth: Number(e.target.value) })} className="w-full" />
                   </div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1">
+                  <div className="flex justify-between text-xs opacity-90 mb-1">
                     <span id="lbl-textcolor">Text Color</span>
-                    {appearance.textColor && <button onClick={() => setAppearance({ ...appearance, textColor: '' })} className="text-indigo-400 hover:underline">Reset to theme</button>}
+                    {appearance.textColor && <button onClick={() => setAppearance({ ...appearance, textColor: '' })} className={`${isDark ? 'text-indigo-300' : 'text-indigo-700'} hover:underline`}>Reset to theme</button>}
                   </div>
                   <div className="flex items-center gap-3">
                     <input
@@ -579,16 +579,16 @@ function App() {
               </summary>
               <div className="space-y-4 mt-3">
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1"><span id="lbl-speed-set">Speed</span><span className="text-indigo-400 font-mono">{settings.wpm} WPM</span></div>
+                  <div className="flex justify-between text-xs opacity-90 mb-1"><span id="lbl-speed-set">Speed</span><span className={`${isDark ? 'text-indigo-300' : 'text-indigo-700'} font-mono`}>{settings.wpm} WPM</span></div>
                   <input aria-labelledby="lbl-speed-set" aria-valuetext={`${settings.wpm} words per minute`} type="range" min="100" max="900" step="10" value={settings.wpm} onChange={(e) => setSettings({ ...settings, wpm: Number(e.target.value) })} className="w-full" />
                   <div className="text-xs opacity-75 mt-1">Or scroll over the reader above to adjust speed.</div>
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1"><span id="lbl-chunk">Chunk Size</span><span className="text-indigo-400 font-mono">{settings.chunkSize} Words</span></div>
+                  <div className="flex justify-between text-xs opacity-90 mb-1"><span id="lbl-chunk">Chunk Size</span><span className={`${isDark ? 'text-indigo-300' : 'text-indigo-700'} font-mono`}>{settings.chunkSize} Words</span></div>
                   <input aria-labelledby="lbl-chunk" type="range" min="1" max="6" step="1" value={settings.chunkSize} onChange={(e) => setSettings({ ...settings, chunkSize: Number(e.target.value) })} className="w-full" />
                 </div>
                 <div>
-                  <div className="flex justify-between text-xs opacity-70 mb-1"><span id="lbl-orp">ORP Pivot Position</span><span className="text-indigo-400 font-mono">{Math.round(settings.orpOffset * 100)}%</span></div>
+                  <div className="flex justify-between text-xs opacity-90 mb-1"><span id="lbl-orp">ORP Pivot Position</span><span className={`${isDark ? 'text-indigo-300' : 'text-indigo-700'} font-mono`}>{Math.round(settings.orpOffset * 100)}%</span></div>
                   <input aria-labelledby="lbl-orp" type="range" min="0.1" max="0.9" step="0.05" value={settings.orpOffset} onChange={(e) => setSettings({ ...settings, orpOffset: Number(e.target.value) })} className="w-full" />
                 </div>
                 <div>
@@ -627,7 +627,7 @@ function App() {
                   {punctuationRules.map((rule, i) => (
                     <div key={i} className={`flex justify-between items-center text-sm p-2 rounded-lg ${isDark ? 'bg-black/20' : 'bg-gray-50'}`}>
                       <span className="font-mono opacity-80">"{rule.str === "\n\n" ? "¶" : rule.str}"</span>
-                      <span className="font-bold text-indigo-400">{rule.val}x</span>
+                      <span className={`font-bold ${isDark ? 'text-indigo-300' : 'text-indigo-700'}`}>{rule.val}x</span>
                       <button onClick={() => removePunctuationRule(i)} aria-label={`Remove delay rule for ${rule.str === "\n\n" ? "paragraph break" : rule.str}`} className={`font-bold px-2 ${isDark ? "text-red-400 hover:text-red-300" : "text-red-700 hover:text-red-600"}`}><span aria-hidden="true">×</span></button>
                     </div>
                   ))}
