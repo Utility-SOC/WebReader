@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 # Internal imports
 from .database import engine, get_db, Base
 from .models import Document, ProcessingTask, TaskStatus
+from . import library_models  # noqa: F401  (registers the library tables)
 from .utils import (
     extract_text_from_pdf_range, 
     process_text, 
@@ -37,6 +38,9 @@ logger = logging.getLogger("SpeedReaderAPI")
 
 # Create Tables
 Base.metadata.create_all(bind=engine)
+from . import search as _search  # noqa: E402
+_search.ensure_schema(engine)
+from .library_api import router as library_router  # noqa: E402
 
 # Document parsers (still needed for some direct checks)
 import pdfplumber
@@ -44,6 +48,7 @@ import docx
 from PIL import Image
 
 app = FastAPI()
+app.include_router(library_router)
 
 # --- Deployment mode -------------------------------------------------------
 # personal      (default) upload your own files; what the desktop build and

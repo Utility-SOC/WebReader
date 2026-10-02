@@ -109,6 +109,28 @@ unzip WebReader-Kubernetes-Deploy.zip -d webreader-k8s && cd webreader-k8s
 ./deploy.sh [release-name] [namespace]   # both optional, default to "webreader"
 ```
 
+## Document library (repository sync, search, reading room)
+
+WebReader can index a repository of documents (PDF, DOCX, PPTX, TXT), check each for accessibility problems, and let people search and read them. It is configured with an admin CLI, deliberately not an HTTP API, so there is nothing for an anonymous visitor to reach.
+
+```bash
+# Add a source. Nothing is published unless you say what to include (deny by default).
+python -m backend.library_cli add-source county --root /data/docs \
+    --include 'public/**' --exclude 'public/drafts/**' \
+    --rule 'public/planning/=Planning Commission:zoning,minutes'
+
+python -m backend.library_cli sync county --dry-run   # see what would be added; changes nothing
+python -m backend.library_cli sync county             # process new/changed files, detect removals
+python -m backend.library_cli held county             # processed, but not yet visible to readers
+python -m backend.library_cli release county          # publish (or: --path P for specific files)
+python -m backend.library_cli withdraw county --path public/notes.txt
+```
+
+- **Hold queue:** new items are processed but stay hidden until released (use `--no-hold` to publish immediately).
+- **Metadata provenance:** every title, author, agency and tag records where it came from (`original`, `rule`, `machine`, `human`) and is never overwritten; a revision adds a row and supersedes the old one.
+- **Public API** (what a reading-room visitor can reach, with `WEBREADER_MODE=reading_room`): `GET /library/search`, `/library/facets`, `/library/items/{id}`, `/library/items/{id}/text`. It returns only released items and never exposes repository paths. Search terms are not logged or stored.
+- Repositories are read through connectors (a plain folder today); S3, SFTP and SharePoint plug into the same interface.
+
 ## AI providers (image captioning)
 
 Captioning describes photos and figures so they are read aloud and shown as image alt text. Choose where it runs:
