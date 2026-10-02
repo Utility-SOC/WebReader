@@ -76,7 +76,11 @@ def _table_block(tbl: Table, location: str) -> Block:
     repeat_header = bool(first_tr is not None and first_tr.xpath("./w:trPr/w:tblHeader"))
     look = tbl._tbl.xpath("./w:tblPr/w:tblLook/@w:firstRow")
     style_header = bool(look and look[0] in ("1", "true"))
-    return Block(kind=TABLE, rows=rows, header_row=repeat_header, location=location,
+    # Word's table "Alt Text" dialog stores a title (tblCaption) and a description (tblDescription)
+    cap = tbl._tbl.xpath("./w:tblPr/w:tblCaption/@w:val")
+    desc = tbl._tbl.xpath("./w:tblPr/w:tblDescription/@w:val")
+    alt = " ".join(x.strip() for x in ((cap[:1] or [""]) + (desc[:1] or [""])) if x.strip())
+    return Block(kind=TABLE, rows=rows, header_row=repeat_header, location=location, alt_text=alt,
                  extra={"header_row_style": style_header, "merged": bool(tbl._tbl.xpath(".//w:gridSpan|.//w:vMerge"))})
 
 

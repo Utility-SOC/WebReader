@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, List
 
-from .structure import DocumentStructure, FIGURE, HEADING, SLIDE_TITLE, TABLE
+from .structure import DocumentStructure, FIGURE, HEADING, SLIDE_TITLE, TABLE, tables_as_images
 
 ERROR, WARNING, INFO = "error", "warning", "info"
 
@@ -89,6 +89,23 @@ def _check_figures(s, issues):
 
 
 def _check_tables(s, issues):
+    if tables_as_images():
+        # Treated like figures: the table needs a description a screen-reader user can use
+        # instead of walking its cells. (Existing alt text is checked like any other.)
+        for b in s.blocks:
+            if b.kind != TABLE or not any(any(c for c in r) for r in b.rows):
+                continue
+            alt = (b.alt_text or "").strip()
+            size = f"{len(b.rows)} rows by {max(len(r) for r in b.rows)} columns"
+            if not alt:
+                issues.append(Issue("TABLE_DESCRIPTION_MISSING", ERROR,
+                                    f"The table ({size}) has no description for assistive technology.",
+                                    b.location, "1.1.1", "suggest", {"rows": len(b.rows), "table_text": b.rows[:20]}))
+            elif _FILENAME_ALT.search(alt) or _GENERIC_NAME.match(alt):
+                issues.append(Issue("TABLE_DESCRIPTION_PLACEHOLDER", ERROR,
+                                    f"The table's description ('{alt}') looks like a placeholder, not a description.",
+                                    b.location, "1.1.1", "suggest", {"alt": alt}))
+        return
     for b in s.blocks:
         if b.kind != TABLE or not b.rows or len(b.rows) < 2:
             continue
