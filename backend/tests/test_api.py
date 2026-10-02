@@ -17,7 +17,7 @@ def test_health():
 
 def _tiny_pdf(text: str) -> bytes:
     """Hand-built one-page 200x200 PDF with `text` at the top-left (no extra deps)."""
-    stream = f"BT /F1 12 Tf 20 170 Td ({text}) Tj ET"
+    stream = f"BT /F1 8 Tf 10 170 Td ({text}) Tj ET"
     objs = [
         "<< /Type /Catalog /Pages 2 0 R >>",
         "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
